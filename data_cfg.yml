@@ -1,0 +1,6 @@
+data_path: data/ontonotes5.py
+num_proc: 6
+
+split: test
+shuffle: True
+save_dir: data/preprocess  # the directory to store the preprocessed data
