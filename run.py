@@ -6,11 +6,12 @@ import copy
 import wandb
 import torch
 import numpy as np
-from vllm import LLM, SamplingParams
+from multiprocessing import Process, Queue
+from vllm import LLM, SamplingParams, RequestOutput
 from datasets import load_dataset, load_from_disk, Dataset
 from func_util import batched, get_config, eval_anno_quality
 from tqdm import tqdm
-from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, matthews_corrcoef, cohen_kappa_score
 
 _LABELS = {"O": 0, "B-CARDINAL": 1, "B-DATE": 2, "I-DATE": 3, "B-PERSON": 4, "I-PERSON": 5, "B-NORP": 6, "B-GPE": 7,
            "I-GPE": 8, "B-LAW": 9, "I-LAW": 10, "B-ORG": 11, "I-ORG": 12, "B-PERCENT": 13, "I-PERCENT": 14,
@@ -117,13 +118,23 @@ class Processor(Label):
             os.makedirs(self.config['save_dir'], exist_ok=True)
             formated_dataset.save_to_disk(self.config['save_dir'])
 
+        if self.config['consume']:
+            try:
+                dataset = load_from_disk(self.config['consume_dir'])
+                return dataset
+            except FileNotFoundError:
+                dataset = None
+
         if self.config['split'] is not None:
-            formated_dataset = formated_dataset[self.config['split']]
+            dataset = formated_dataset[self.config['split']]
 
         if self.config['shuffle']:
-            formated_dataset = formated_dataset.shuffle()
+            dataset = dataset.shuffle()
 
-        return formated_dataset
+        if self.config['select']:
+            dataset = dataset.select(range(self.config['select']))
+        dataset.save_to_disk(self.config['consume_dir'])
+        return dataset
 
 class Annotation(Label):
     """
@@ -137,40 +148,50 @@ class Annotation(Label):
         for idx, anno_cfg in enumerate(self.annotators_cfg):
             self.annotator_ids[anno_cfg['name']] = idx
 
-    @staticmethod
-    def _init_chat_message(annotator_name: str, **anno_model_cfg) -> list[None | dict[str, str]]:
+    def _init_chat_message(self, anno_cfg) -> list[None | dict[str, str]]:
         """
         Init the chat messages for the annotation models.
 
-        :param annotator_name: The name of the annotation model.
-        :param anno_model_cfg: The parameters of the annotation model.
+        :param anno_cfg: The parameters of the annotation model.
         :return:
         """
-        if annotator_name == 'Qwen':
+        if anno_cfg['chat']:
             # for Qwen and Yi-ft, we need to input the system's prompt and the user's prompt
             # https://huggingface.co/Qwen/Qwen1.5-72B-Chat-GPTQ-Int8
             # https://huggingface.co/TheBloke/nontoxic-bagel-34b-v0.2-GPTQ
+            sys_prompt = self.config['prompt_template_chat'].format(system_role=self.config['system_role'],
+                                                                    task_prompt=self.config['task_prompt'],
+                                                                    types_prompt=self.config['types_prompt'])
             chat_message = [
-                {"role": "system", "content": anno_model_cfg['anno_sys_prompt_batch']},
+                {"role": "system", "content": sys_prompt},
             ]
-            for example in anno_model_cfg['anno_examples_batch']:
-                usr_content = anno_model_cfg['anno_usr_prompt_batch'].format(sentence=example['sentence'])
-                chat_message.append({"role": "user", "content": usr_content})
+            for example in self.config['examples']:
+                instance = self.config['instance_template'].format(sentence=example['sentence'], output='')
+                chat_message.append({"role": "user", "content": instance})
                 chat_message.append({"role": "assistant", "content": example['output']})
+            query = self.config['instance_template'].format(sentence='{sentence}', output='')
+            chat_message.append({"role": "user", "content": query})
         else:
+            examples = ''
+            for idx, example in enumerate(self.config['examples']):
+                instance = self.config['instance_template'].format(sentence=example['sentence'], output=example['output'])
+                examples += f'{idx + 1})\n{instance}'
+            query = self.config['instance_template'].format(sentence='{sentence}', output='')
+            usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
+                                                               task_prompt=self.config['task_prompt'],
+                                                               types_prompt=self.config['types_prompt'],
+                                                               examples=examples,
+                                                               query=query)
             # e.g., for mistral and Yi, we only need to input the user's prompt
-            chat_message = []
+            chat_message = [{"role": "user", "content": usr_prompt}]
         return chat_message
 
     @staticmethod
-    def _generate_chat_messages(instances, anno_usr_prompt_batch, types_prompt, chat_message_template):
+    def _generate_chat_messages(instances, chat_message_template):
         """
-        Used for stage2.
         Generate chat messages for each instance. Meanwhile, init the labels for each instance.
 
         :param instances: The instances to be annotated.
-        :param anno_usr_prompt_batch: The user prompt for the annotating model.
-        :param types: The candidate type words for the annotating model.
         :param chat_message_template: The chat message template for the annotating model.
         :return:
         """
@@ -180,16 +201,39 @@ class Annotation(Label):
                 sentence = ' '.join(tokens[:start] + ['[ ', entity_mention, ' ]'] + tokens[end:])
 
                 chat_message = copy.deepcopy(chat_message_template)
-                usr_content = anno_usr_prompt_batch.format(sentence=sentence, types=types_prompt)
-                chat_message.append({"role": "user", "content": usr_content})
+                query = chat_message[-1]['content'].format(sentence=sentence)
+                chat_message[-1] = {"role": "user", "content": query}
                 # yield the ID of the sentences, the ID of the entity mention, the label id of the entity mention and the chat message
                 yield sent_id, span_id, span_label, chat_message
 
-    def annotate_by_one(self, dataset, **anno_cfg):
+    @staticmethod
+    def _process_output_text(output_text):
+        """
+        process the output text to get the label of the entity mention.
+        :param output_text: the text output by the annotator model
+        :return:
+        """
+        json_pattern = [r'\{\{(.*?)\}\}', r'\{(.*?)\}']  # the pattern to extract JSON string
+        output_text = output_text.strip().replace('\_', '_')
+        out_label = 'O'  # we assign 'O' to label to this span if we cannot extract the JSON string
+
+        # extract JSON string from output.outputs[0].text
+        for pattern in json_pattern:
+            result = re.search(pattern, output_text, re.DOTALL)  # only extract the first JSON string
+            if result:
+                try:
+                    out_label = json.loads(result.group())['answer'].strip()
+                    break
+                except json.JSONDecodeError:
+                    continue
+        return out_label
+
+    def annotate_by_one(self, dataset, queue, **anno_cfg):
         """
         Annotate the dataset by one specific annotator.
         :param dataset: the dataset to be annotated
         :param anno_cfg: the config of the annotator
+        :param queue: the queue to store the annotation result
         :return:
         """
         # 0. Some settings
@@ -217,6 +261,7 @@ class Annotation(Label):
         this_cache_dir = os.path.join(self.config['cache_dir'], annotator_name)
         try:
             cache_result = load_from_disk(this_cache_dir)
+            queue.put(cache_result)
             return cache_result
         except FileNotFoundError:
             os.makedirs(this_cache_dir, exist_ok=True)
@@ -238,17 +283,13 @@ class Annotation(Label):
         anno_tokenizer = anno_model.llm_engine.tokenizer.tokenizer
 
         # 2. Init the chat messages
-        chat_message_template = self._init_chat_message(annotator_name, **anno_cfg)
+        chat_message_template = self._init_chat_message(anno_cfg)
 
         # 3. batch process
         # yield sent_id, span_id, span_label, chat_message
-        pbar = tqdm(batched(self._generate_chat_messages(dataset,
-                                                         anno_cfg['anno_usr_prompt_batch'],
-                                                         self.config['types_prompt'],
-                                                         chat_message_template),
-                            anno_cfg['anno_bs']),desc=f'annotating by {annotator_name}')
+        pbar = tqdm(batched(self._generate_chat_messages(dataset,chat_message_template
+                                                         ),anno_cfg['anno_bs']),desc=f'annotating by {annotator_name}')
 
-        json_pattern = [r'\{\{(.*?)\}\}', r'\{(.*?)\}']  # the pattern to extract JSON string
         res_labels, res_label_ids = [], []  # store the output labels and label ids
         y_true = []  # store the ground truth label ids
         for batch in pbar:  # batch is a tuple like ((sent_id_0, span_id_0, span_label_0, chat_0),(sent_id_1, span_id_1, span_label_1, chat_1)...)
@@ -269,34 +310,17 @@ class Annotation(Label):
             for output in outputs:
                 test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
             for sent_id, span_id, output in zip(batch_sent_ids, batch_span_ids, outputs):
-                # extract JSON string from output.outputs[0].text
-                output_text = output.outputs[0].text.strip()
-                result = None
-                if output_text.startswith('{{'):
-                    result = re.search(json_pattern[0], output_text,re.DOTALL)  # only extract the first JSON string
-                elif output_text.startswith('{'):
-                    result = re.search(json_pattern[1], output_text, re.DOTALL)
-
-                out_label = 'O'
-                if result:
-                    try:
-                        tmp = result.string.replace('\_', '_')
-                        out_label = json.loads(tmp)['answer'].strip()
-                    except json.JSONDecodeError:
-                        out_label = 'O'  # we assign 'O' to label to this span if we cannot extract the JSON string, so that we can continue the loop
-
+                out_label = self._process_output_text(output.outputs[0].text)
                 if out_label not in self.label2id.keys():
                     # check if the output label is redundant
-                    tmp_out_label_0 = out_label.split(' ')[0]
-                    tmp_out_label_1 = out_label.split(',')[0]
+                    tmp_out_label_0 = out_label.split(' ')[0].strip()
+                    tmp_out_label_1 = out_label.split(',')[0].strip()
                     if tmp_out_label_0 in self.label2id.keys():
                         out_label = tmp_out_label_0
                     elif tmp_out_label_1 in self.label2id.keys():
                         out_label = tmp_out_label_1
                     else:
                         out_label = 'O'
-                    # print(f'prompt: {output.prompt}')
-                    # print(f'>>> out_label:"{out_label}"')
 
                 out_label_id = self.label2id[out_label]
                 res_labels.append(out_label)
@@ -304,11 +328,15 @@ class Annotation(Label):
                 batch_res_label_ids.append(out_label_id)
 
             # evaluate batch results
-            wandb.log({'f1-micro': f1_score(y_true=batch_span_labels, y_pred=batch_res_label_ids, average='micro'),
-                       'precision-micro': precision_score(y_true=batch_span_labels, y_pred=batch_res_label_ids, average='micro'),
-                       'recall-micro': recall_score(y_true=batch_span_labels, y_pred=batch_res_label_ids, average='micro'),
-                       'accuracy': accuracy_score(y_true=batch_span_labels, y_pred=batch_res_label_ids),
+            wandb.log({'f1-macro': f1_score(y_true=batch_span_labels, y_pred=batch_res_label_ids, average='macro', zero_division=0),
+                       'precision-weighted': precision_score(y_true=batch_span_labels, y_pred=batch_res_label_ids, average='weighted', zero_division=0),
+                       'recall-weighted': recall_score(y_true=batch_span_labels, y_pred=batch_res_label_ids, average='weighted', zero_division=0),
+                       'accuracy & f1-micro': accuracy_score(y_true=batch_span_labels, y_pred=batch_res_label_ids),
+                       'matthews_corrcoef': matthews_corrcoef(y_true=batch_span_labels, y_pred=batch_res_label_ids),
+                       'cohen_kappa_score': cohen_kappa_score(y1=batch_span_labels, y2=batch_res_label_ids)
                        })
+
+        # ray.shutdown()
 
         # 5. cache the annotation result
         cache_result = {
@@ -317,6 +345,7 @@ class Annotation(Label):
             "label_ids": res_label_ids
         }
         cache_result = Dataset.from_dict(cache_result)
+        queue.put(cache_result)
         cache_result.save_to_disk(this_cache_dir)
         return cache_result
 
@@ -328,19 +357,34 @@ class Annotation(Label):
         :param quality: whether to evaluate the quality of the annotations
         :return:
         """
-        quality_data = []
+
+        # 1. start process for each annotator
+        queue = Queue()
         for anno_cfg in self.annotators_cfg:
-            result = self.annotate_by_one(dataset, **anno_cfg)
+            p = Process(target=self.annotate_by_one, args=(dataset, queue), kwargs=anno_cfg)
+            p.start()
+            p.join()  # wait for the process to finish so that we can release the GPU memory for the next process
+
+        idx = 0  # the index of the annotator
+        quality_data = []  # store the prediction for each annotator
+        while not queue.empty():
+            result = queue.get()
             quality_data.append(result['label_ids'])
             if eval:
-                self.evaluate(result['y_true'], result['label_ids'], anno_cfg['name'])
+                self.evaluate(result['y_true'], result['label_ids'], self.annotators_cfg[idx]['name'])
+            idx += 1
+
         if quality:
+            qual_res_file = os.path.join(self.config['eval_dir'], f'quality_res.txt')
             quality_data = np.array(quality_data)  # quality_data with shape (num_annotators, num_instances)
             # quality_data with shape (num_instances, num_annotators)
             # transpose the quality_data to get the shape (num_instances, num_annotators)
-            eval_anno_quality(quality_data.T)
+            quality_res = eval_anno_quality(quality_data.T)
+            with open(qual_res_file, 'w') as f:
+                for metric, res in quality_res.items():
+                    f.write(f'{metric}: {res}\n')
 
-    def evaluate(self, y_true, y_pred, annotator_name: str):
+    def evaluate(self, y_true, y_pred, annotator_name: str, quality=False):
         """
         Evaluate the annotation results by an annotator.
         :param y_true:
@@ -349,10 +393,12 @@ class Annotation(Label):
         :return:
         """
         # compute all evaluation metrics
-        eval_results = {'f1-micro': f1_score(y_true=y_true, y_pred=y_pred, average='micro'),
-                        'precision-micro': precision_score(y_true=y_true, y_pred=y_pred, average='micro'),
-                        'recall-micro': recall_score(y_true=y_true, y_pred=y_pred, average='micro'),
-                        'accuracy': accuracy_score(y_true=y_true, y_pred=y_pred)}
+        eval_results = {'f1-macro': f1_score(y_true=y_true, y_pred=y_pred, average='macro'),
+                        'precision-weighted': precision_score(y_true=y_true, y_pred=y_pred, average='weighted', zero_division=0),
+                        'recall-weighted': recall_score(y_true=y_true, y_pred=y_pred, average='weighted', zero_division=0),
+                        'accuracy & f1-micro': accuracy_score(y_true=y_true, y_pred=y_pred),
+                        'matthews_corrcoef': matthews_corrcoef(y_true=y_true, y_pred=y_pred),
+                        'cohen_kappa_score': cohen_kappa_score(y1=y_true, y2=y_pred)}
         if not os.path.exists(self.config['eval_dir']):
             os.makedirs(self.config['eval_dir'], exist_ok=True)
         res_file = os.path.join(self.config['eval_dir'], f'{annotator_name}_res.txt')

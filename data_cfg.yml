@@ -3,4 +3,8 @@ num_proc: 6
 
 split: test
 shuffle: True
+select: 1600
 save_dir: data/preprocess  # the directory to store the preprocessed data
+
+consume: True
+consume_dir: data/consume  # the directory to store the consumed data to be annotated

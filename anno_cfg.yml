@@ -1,6 +1,40 @@
 cuda_devices: all  # use all available GPUs
 cache_dir: data/anno_res  # cache directory
 eval_dir: data/eval  # evaluation results file dir
+
+prompt_template: >-
+  {system_role}
+  {task_prompt}
+  
+  Here are types and their descriptions:
+  ### Types
+  {types_prompt}
+
+  Here are some examples to help you understand the task better:
+  ### Examples
+  {examples}
+  
+  ### Query
+  {query}
+
+# for chat model using chat template
+prompt_template_chat: >-
+  {system_role}
+  {task_prompt}
+  
+  Here are types and their descriptions:
+  ### Types
+  {types_prompt}
+
+system_role: >-
+  You are a professional and helpful crowdsourcing data annotator using English.
+
+task_prompt: >-
+  You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']').
+  Then you should annotate the given entity mention using the provided types.
+  If there is no suitable type, you can choose 'O' as answer.
+  The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
+
 types_prompt: >-
   1) PERSON
   PERSON indicates "Person Name". These are proper names of people, including fictional people, first names, last names, 
@@ -16,8 +50,8 @@ types_prompt: >-
   The distinction between NORP and other types is morphological. "American" and "Americans" are adjectival nationalities, 
   while "America" and "US" are GPEs, regardless of context. 
   Following are some examples. The named entity mentions are marked within square brackets:
-  "[American] forces", "[Eastern European] cuisine", "the [Democratic] candidate", "the three [Democrats]",
-  "a [Chinese-American] dentist", "a [Jewish] doctor".
+  "[Eastern European] cuisine", "the [Democratic] candidate", "the three [Democrats]", "a [Chinese-American] dentist", 
+  "a [Jewish] doctor".
 
   3) FAC
   FAC indicates "Facility". Names of man-made structures: infrastructure (streets, bridges), buildings, monuments, etc. 
@@ -140,154 +174,55 @@ types_prompt: >-
   Following are some examples. The named entity mentions are marked within square brackets:
   "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
 
+instance_template: >-
+  sentence: "{sentence}"
+  output: {output}
+
+examples:
+  -
+    sentence: "While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony ."
+    output: >-
+      {{
+        "analysis": "According to the context in the sentence, there is no suitable type for the entity mention 'his plots'. So, I should annotate it as 'O'",
+        "answer": "O"
+        }}
+  -
+    sentence: "The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway ."
+    output: >-
+      {{
+        "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
+        "answer": "FAC"
+        }}
+  -
+    sentence: "Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain ."
+    output: >-
+      {{
+        "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is the date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
+        "answer": "DATE"
+        }}
+  -
+    sentence: "[ American ] Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
+    output: >-
+      {{
+        "analysis": "According to the context in the sentence, the entity mention 'American' is the adjectival forms of adjectival forms of a nationality ('NORP'). So I should annotate it as 'NORP'",
+        "answer": "NORP"
+        }}
+  -
+    sentence: "Among the most famous is the [ Battle of Hulao Pass] , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
+    output: >-
+      {{
+        "analysis": "According to the context in the sentence, the entity mention 'Battle of Hulao Pass' is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. So I should annotate it as 'EVENT'",
+        "answer": "EVENT"
+        }}
+    
+    
+
 annotators: # choose annotating model from your config below.
   -
-   name: Mistral
-   checkpoint: ckpt/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ
-    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-   anno_usr_prompt_batch: >-
-     You are a professional and helpful crowdsourcing data annotator using English.
-     You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']').
-     Then you should annotate the given entity mention using the provided types.
-     If there is no suitable type, you can choose 'O' as answer.
-     The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
-     Here are types and their descriptions:
-     ### Types
-     {types}
-     
-     Here are some examples to help you understand the task better:
-     ### Examples
-     1)
-     sentence: "While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony ."
-     output:
-     {{
-       "analysis": "According to the context in the sentence, there is no suitable type for the entity mention 'his plots'. So, I should annotate it as 'O'",
-       "answer": "O"
-       }}
-
-     2)
-     sentence: "The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway ."
-     output:
-     {{
-        "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
-        "answer": "FAC"
-        }}
-
-     3)
-     sentence: "Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain ."
-     output:
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is the date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
-        "answer": "DATE"
-        }}
-
-     ### Query
-     sentence: "{sentence}"
-     output:
-   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
-   anno_max_tokens: 100 # maximum number of tokens to generate per output sequence.
-   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-   anno_bs: 40  # batch size for this model
-   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-   gpu_memory_utilization: 0.8
-   anno_res_cache_file: anno_results.csv  # cache judgment results file#
-
-  -
-   name: AquilaChat2  # good
-   checkpoint: ckpt/TheBloke/AquilaChat2-34B-GPTQ # https://huggingface.co/TheBloke/AquilaChat2-34B-GPTQ
-    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-   anno_usr_prompt_batch: >-
-      You are a professional and helpful crowdsourcing data annotator using English.
-      You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']').
-      Then you should annotate the given entity mention using the provided types.
-      If there is no suitable type, you can choose 'O' as answer.
-      The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
-      Here are types and their descriptions:
-      ### Types
-      {types}
-      
-      Here are some examples to help you understand the task better:
-      ### Examples
-      1)
-      sentence: "While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony ."
-      output:
-      {{
-        "analysis": "According to the context in the sentence, there is no suitable type for the entity mention 'his plots'. So, I should annotate it as 'O'",
-        "answer": "O"
-        }}
-      
-      2)
-      sentence: "The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway ."
-      output:
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
-        "answer": "FAC"
-        }}
-      
-      3)
-      sentence: "Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain ."
-      output:
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is the date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
-        "answer": "DATE"
-        }}
-      
-      ### Query
-      sentence: "{sentence}"
-      output:
-   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-   anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-   anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
-   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-   anno_bs: 40  # batch size for this model
-   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-   gpu_memory_utilization: 0.8
-   anno_res_cache_file: anno_results.csv  # cache judgment results file
-
-  -
    name: Yi  # good
+   chat: False
    checkpoint: ckpt/01-ai/Yi-34B-Chat-8bits  # https://huggingface.co/01-ai/Yi-34B-Chat-8bits
     # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-   anno_usr_prompt_batch: >-
-      You are a professional and helpful crowdsourcing data annotator using English.
-      You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']').
-      Then you should annotate the given entity mention using the provided types.
-      If there is no suitable type, you can choose 'O' as answer.
-      The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
-      Here are types and their descriptions:
-      ### Types
-      {types}
-      
-      Here are some examples to help you understand the task better:
-      ### Examples
-      1)
-      sentence: "While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony ."
-      output:
-      {{
-        "analysis": "According to the context in the sentence, there is no suitable type for the entity mention 'his plots'. So, I should annotate it as 'O'",
-        "answer": "O"
-        }}
-      
-      2)
-      sentence: "The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway ."
-      output:
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
-        "answer": "FAC"
-        }}
-      
-      3)
-      sentence: "Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain ."
-      output:
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is the date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
-        "answer": "DATE"
-        }}
-      
-      ### Query
-      sentence: "{sentence}"
-      output:
    anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
    anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
@@ -299,47 +234,11 @@ annotators: # choose annotating model from your config below.
 
   -
     name: Qwen  # bad performance
+    chat: True
     # https://huggingface.co/Qwen/Qwen1.5-14B-Chat
     checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
     # qwen has system prompt. We can input the examples in a form of chatting
     # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
-
-    anno_sys_prompt_batch: >-
-      You are a professional and helpful crowdsourcing data annotator using English.
-      You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']').
-      Then you should annotate the given entity mention using the provided types.
-      If there is no suitable type, you can choose 'O' as answer.
-      The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
-      Here are types and their descriptions:
-      ### Types
-      {types}
-      sentence: ""
-      output:
-
-    # the examples can be input in a form of chatting
-    anno_examples_batch: # examples input in a form of chatting
-      - sentence: While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony .
-        output: >-
-          {{
-            "analysis": "According to the context in the sentence, there is no suitable type for the entity mention 'his plots'. So, I should annotate it as 'O'",
-            "answer": "O"
-            }}
-      - sentence: The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway .
-        output: >-
-          {{
-            "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
-            "answer": "FAC"
-            }}
-      - sentence: Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain .
-        output: >-
-          {{
-            "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is the date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
-            "answer": "DATE"
-            }}
-    anno_usr_prompt_batch: >-
-      sentence: "{sentence}"
-      output:
-
     anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
     anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
     anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
@@ -349,8 +248,40 @@ annotators: # choose annotating model from your config below.
     gpu_memory_utilization: 0.8
     anno_res_cache_file: anno_results.csv  # cache judgment results file
 
+  -
+   name: Mistral
+   chat: False
+   checkpoint: ckpt/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ
+    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
+   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
+   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
+   anno_max_tokens: 100 # maximum number of tokens to generate per output sequence.
+   repetition_penalty: 1  # set to 1 to avoid repetition penalty
+   anno_bs: 40  # batch size for this model
+   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+   gpu_memory_utilization: 0.8
+   anno_res_cache_file: anno_results.csv  # cache judgment results file#
+
+  -
+   name: AquilaChat2  # good
+   chat: False
+   checkpoint: ckpt/TheBloke/AquilaChat2-34B-GPTQ # https://huggingface.co/TheBloke/AquilaChat2-34B-GPTQ
+    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
+   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
+   anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
+   anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
+   repetition_penalty: 1  # set to 1 to avoid repetition penalty
+   anno_bs: 40  # batch size for this model
+   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+   gpu_memory_utilization: 0.8
+   anno_res_cache_file: anno_results.csv  # cache judgment results file
+
+
+
 metrics:
   - accuracy
   - precision
   - recall
   - f1
+  - mcc
+  - cohen_kappa

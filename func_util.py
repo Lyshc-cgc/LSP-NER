@@ -1,6 +1,7 @@
 import yaml
 import itertools
 import numpy as np
+from scipy.stats import norm
 from statsmodels.stats import inter_rater as irr
 from yaml import SafeLoader
 def get_config(cfg_file):
