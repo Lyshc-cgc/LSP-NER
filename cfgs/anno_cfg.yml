@@ -1,6 +1,9 @@
+# Attention! ALL paths must be relative to the 'config.yml' file!
+
 cuda_devices: all  # use all available GPUs
 cache_dir: data/anno_res  # cache directory
 eval_dir: data/eval  # evaluation results file dir
+gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
 
 prompt_template: >-
   {system_role}
@@ -31,7 +34,8 @@ system_role: >-
 
 task_prompt: >-
   You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']').
-  Then you should annotate the given entity mention using the provided types.
+  First, you need to determine if the mention is a special named entity instead of a common noun phrase.
+  Then, you should annotate the given entity mention using the provided types.
   If there is no suitable type, you can choose 'O' as answer.
   The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
 
@@ -183,41 +187,42 @@ examples:
     sentence: "While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony ."
     output: >-
       {{
-        "analysis": "According to the context in the sentence, there is no suitable type for the entity mention 'his plots'. So, I should annotate it as 'O'",
+        "analysis": "According to the context in the sentence, the entity mention 'his plots' is just a common noun phrase. There is no suitable type for it. So, I should annotate it as 'O'",
         "answer": "O"
         }}
   -
     sentence: "The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway ."
     output: >-
       {{
-        "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
+        "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a special named entity which is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
         "answer": "FAC"
         }}
   -
     sentence: "Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain ."
     output: >-
       {{
-        "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is the date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
+        "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is a special named entity which is a date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
         "answer": "DATE"
         }}
   -
     sentence: "[ American ] Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
     output: >-
       {{
-        "analysis": "According to the context in the sentence, the entity mention 'American' is the adjectival forms of adjectival forms of a nationality ('NORP'). So I should annotate it as 'NORP'",
+        "analysis": "According to the context in the sentence, the entity mention 'American' is a special named entity which is an adjectival forms of adjectival forms of a nationality ('NORP'). So I should annotate it as 'NORP'",
         "answer": "NORP"
         }}
   -
     sentence: "Among the most famous is the [ Battle of Hulao Pass] , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
     output: >-
       {{
-        "analysis": "According to the context in the sentence, the entity mention 'Battle of Hulao Pass' is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. So I should annotate it as 'EVENT'",
+        "analysis": "According to the context in the sentence, the entity mention 'Battle of Hulao Pass' is a special named entity which is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. So I should annotate it as 'EVENT'",
         "answer": "EVENT"
         }}
     
     
 
-annotators: # choose annotating model from your config below.
+
+annotators: # choose annotating model from your cfgs below.
   -
    name: Yi  # good
    chat: False
@@ -232,21 +237,21 @@ annotators: # choose annotating model from your config below.
    gpu_memory_utilization: 0.8
    anno_res_cache_file: anno_results.csv  # cache judgment results file
 
-  -
-    name: Qwen  # bad performance
-    chat: True
-    # https://huggingface.co/Qwen/Qwen1.5-14B-Chat
-    checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
-    # qwen has system prompt. We can input the examples in a form of chatting
-    # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
-    anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-    anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
-    repetition_penalty: 1  # set to 1 to avoid repetition penalty
-    anno_bs: 40  # batch size for this model
-    dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-    gpu_memory_utilization: 0.8
-    anno_res_cache_file: anno_results.csv  # cache judgment results file
+#  -
+#    name: Qwen  # bad performance
+#    chat: True
+#    # https://huggingface.co/Qwen/Qwen1.5-14B-Chat
+#    checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
+#    # qwen has system prompt. We can input the examples in a form of chatting
+#    # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
+#    anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
+#    anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
+#    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
+#    repetition_penalty: 1  # set to 1 to avoid repetition penalty
+#    anno_bs: 40  # batch size for this model
+#    dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+#    gpu_memory_utilization: 0.8
+#    anno_res_cache_file: anno_results.csv  # cache judgment results file
 
   -
    name: Mistral

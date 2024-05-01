@@ -79,3 +79,38 @@ def eval_anno_quality(data, metric='fleiss_kappa'):
             'lower_0.95_ci_bound': lower_ci_bound,
             'upper_0.95_ci_bound': upper_ci_bound
         }
+
+
+def compute_span_f1(pred_spans, gold_spans):
+    """
+    Compute the confusion matrix, span-level metrics such as precision, recall and F1-micro.
+    :param pred_spans: the spans predicted by the model.
+    :param gold_spans: the gold spans in a batch.
+    :return:
+    """
+    true_positive, false_positive, false_negative = 0, 0, 0
+    for span_item in pred_spans:
+        if span_item in gold_spans:
+            true_positive += 1
+            gold_spans.remove(span_item)
+        else:
+            false_positive += 1
+
+    # these entities are not predicted.
+    false_negative += len(gold_spans)
+
+    recall = true_positive / (true_positive + false_negative)
+    precision = true_positive / (true_positive + false_positive)
+    if recall + precision == 0:
+        f1 = 0
+    else:
+        f1 = precision * recall * 2 / (recall + precision)
+
+    return {
+        'true_positive': true_positive,
+        'false_positive': false_positive,
+        'false_negative': false_negative,
+        'recall': recall,
+        'precision': precision,
+        'f1': f1
+    }
