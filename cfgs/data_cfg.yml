@@ -17,13 +17,25 @@ continue_dir: data/continue  # the directory to store the continued data to be a
 # if gold_span is False, we get span from scratch
 # set config as follows
 
+eval_dir: data/eval  # evaluation results file dir
+eval_quality: True  # whether to evaluate the quality of the spans recognized by stanza and spaCy parsers
+
 # strict or loose. In strict mode, we get spans based on intersection of spaCy and Stanza results.
 # In loose mode, we get spans based on union of spaCy and Stanza results.
 cuda_devices: all  # specify which GPU to use, 'all' or comma-split str like '0,1,2,...,n-1' (consume that you have n GPUs)
 mode: loose  # strict or loose
 span_portion: 0.4  # The proportion of the longest span length to sentence length. To filter out long span.
-#batch_num_per_device: 20  # Specify number of batches on each device to be processed in map function. Depends on your RAM memory
-#batch_size_per_device: 512  #  Specify batch size per device. Depends on your GPU memory.
+cand_constituent:  # the candidate constituent labels to be extracted from the constituency parsing results
+  - NP  # noun phrase
+  - CD  # Cardinal number
+  - JJ  # Adjective
+  - ADJP  # adjective phrase
+  - ADVP  # adverb phrase
+  - NNP  # Proper noun, singular
+  - NNPS  #  Proper noun, plural
+#  - NN  # Noun, singular or mass
+#  - QP  # Quantifier phrase
+#  - PP  # Prepositional phrase
 spacy_model:
   # https://spacy.io/api/top-level#spacy.load
   # for spacy.load function, we need to specify 'name'

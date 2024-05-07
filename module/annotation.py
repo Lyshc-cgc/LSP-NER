@@ -326,10 +326,10 @@ class Annotation(Label):
                             'accuracy & f1-micro': accuracy_score(y_true=y_true, y_pred=y_pred),
                             'matthews_corrcoef': matthews_corrcoef(y_true=y_true, y_pred=y_pred),
                             'cohen_kappa_score': cohen_kappa_score(y1=y_true, y2=y_pred)}
-            res_cache_dir = os.path.join(self.config['eval_dir'], 'gold_span', annotator_name)
+            res_cache_dir = os.path.join(self.config['eval_dir'], 'gold_span')
         else:
             eval_results = fu.compute_span_f1(y_true, y_pred)
-            res_cache_dir = os.path.join(self.config['eval_dir'], 'span', annotator_name)
+            res_cache_dir = os.path.join(self.config['eval_dir'], 'span')
 
         if not os.path.exists(res_cache_dir):
             os.makedirs(res_cache_dir, exist_ok=True)

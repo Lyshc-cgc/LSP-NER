@@ -80,7 +80,6 @@ def eval_anno_quality(data, metric='fleiss_kappa'):
             'upper_0.95_ci_bound': upper_ci_bound
         }
 
-
 def compute_span_f1(pred_spans, gold_spans):
     """
     Compute the confusion matrix, span-level metrics such as precision, recall and F1-micro.
