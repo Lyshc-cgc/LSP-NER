@@ -1,5 +1,6 @@
 import re
 import os
+import copy
 import multiprocess
 import module.func_util as fu
 from datasets import load_dataset, load_from_disk
@@ -98,18 +99,20 @@ class Processor(Label):
         """
         res_spans = []
         for start_ch_pos, end_ch_pos, span in target_spans:
-            # stanza will replace some special characters with special tokens, e.g., '(' -> '-LRB-', '[' -> '-LSB-'
-            # We need to replace them back to the original characters.
-            # But we need to use escape character in the regular expression.
-            # span = self._replace_special_tokens(span)
 
             if start_ch_pos == -1 and end_ch_pos == -1:  # -1 means the start/end character index is not available
-                # Find the start character index and end character index of the first matched NP/NE span.
+                # Find the start character index and end character index of the first matched NP span.
                 re_span = re.escape(span)  # escape special characters in the span
-                pattern = r"\b" + re_span + r"\b"  # match the whole word
-                matches = re.finditer(pattern, sent)
-                for match in matches:
-                    start_ch_idx, end_ch_idx = match.start(), match.end()
+                pattern_0 = r"\b(" + re_span + r")\b"  # match the whole span after escaping special characters
+                pattern_1 = r"\s(" + re_span + r")\s"  # match the span surrounded by spaces after escaping special characters
+                patterns = [pattern_0, pattern_1]
+                res_matches = []
+                for pattern in patterns:
+                    matches = re.finditer(pattern, sent)
+                    res_matches += [match for match in matches]
+
+                for match in res_matches:
+                    start_ch_idx, end_ch_idx = match.span(1)  # get the capture group 1
                     # To get the start position of the first word of the matched NP span,
                     # we just need to count the number of spaces before the start character
                     start = sent[:start_ch_idx].count(' ')
@@ -137,16 +140,16 @@ class Processor(Label):
         for sp in split:
             dataset_split = dataset[sp]
             spans, spans_labels = dataset_split['spans'], dataset_split['spans_labels']
-            spa_cons_string, sta_cons_string = dataset_split['spa_cons_string'], dataset_split['sta_cons_string']
+            spa_cons_string = dataset_split['spa_cons_string']
 
             true_positive, false_positive, false_negative = 0, 0, 0
-            for idx, (instance_spans, instance_spans_labels, sp_cs, st_cs) in enumerate(zip(spans, spans_labels, spa_cons_string, sta_cons_string)):
-                # 1. get the gold spans and their labels
-                gold_spans = [(start, end, span) for start, end, span, label in instance_spans_labels]
+            for idx, (instance_spans, instance_spans_labels, sp_cs) in enumerate(zip(spans, spans_labels, spa_cons_string)):
 
+                # 1. get the gold spans and their labels
+                gold_spans = set([(start, end, span) for start, end, span, label in instance_spans_labels])
+                original_gold_spans = copy.deepcopy(gold_spans)
                 # 2. get the predicted spans and their labels
                 pred_spans = [(start, end, span) for start, end, span in instance_spans]
-
                 # 3. compute the span F1
                 for span_item in pred_spans:
                     if span_item in gold_spans:
@@ -156,11 +159,12 @@ class Processor(Label):
                         false_positive += 1
 
                 # these entities are not predicted.
-                if len(gold_spans) > 0:
-                    print('-'*20)
-                    print(f'remaining gold_spans: {gold_spans}')
-                    print(f'spacy constituency tree: {sp_cs}')
-                    print(f'stanza constituency tree: {st_cs}')
+                # if len(gold_spans) > 0:
+                #     print('-' * 20)
+                #     print(f'gold_spans: {original_gold_spans}')
+                #     print(f'pred_spans: {pred_spans}')
+                #     print(f'remaining gold_spans: {gold_spans}')
+                #     print(f'spacy constituency tree: {sp_cs}')
                 false_negative += len(gold_spans)
 
             recall = true_positive / (true_positive + false_negative)
@@ -244,13 +248,14 @@ class Processor(Label):
         spacy_nlp.add_pipe('benepar', config={'model': 'benepar_en3_large'})
 
         # 0.3 stanza setting
-        stanza_nlp = stanza.Pipeline(**self.config['stanza_model'], download_method=None)
+        # stanza_nlp = stanza.Pipeline(**self.config['stanza_model'], download_method=None)
 
         # 0.4 init the result
         res_spans = []  # store the spans of the instances, predicted by the spaCy and stanza parsers
         res_spans_labels = []  # store the gold spans and labels of the instances
+        res_ex_spans_labels = []  # store the expanded gold spans and labels of the instances
         res_spa_cons_string = []  # store the constituency parse tree of the instances, predicted by the spaCy parser
-        res_sta_cons_string = []  # store the constituency parse tree of the instances, predicted by the stanza parser
+        # res_sta_cons_string = []  # store the constituency parse tree of the instances, predicted by the stanza parser
 
         # main process
         all_raw_tokens, all_raw_tags = instances['tokens'], instances['tags']
@@ -266,9 +271,10 @@ class Processor(Label):
         spacy_docs = list(spacy_nlp.pipe(sents))  # covert generator to list
 
         # refer to https://stanfordnlp.github.io/stanza/getting_started.html#processing-multiple-documents
-        stanza_docs = stanza_nlp.bulk_process(sents)
+        # stanza_docs = stanza_nlp.bulk_process(sents)
 
-        for sent, raw_tokens, raw_tags, spa_doc, sta_doc in zip(sents, all_raw_tokens, all_raw_tags, spacy_docs, stanza_docs):
+        # for sent, raw_tokens, raw_tags, spa_doc, sta_doc in zip(sents, all_raw_tokens, all_raw_tags, spacy_docs, stanza_docs):
+        for sent, raw_tokens, raw_tags, spa_doc in zip(sents, all_raw_tokens, all_raw_tags, spacy_docs):
             # 2.1 spaCy
             # 2.1.1 get tag and token alignment between sentence tokenized by spaCy and raw sentence
             # see details at https://spacy.io/usage/linguistic-features#aligning-tokenization
@@ -285,6 +291,9 @@ class Processor(Label):
 
             # 2.1.2 get gold spans and its labels
             gold_spans, gold_spans_tags = self._get_span_and_tags(spacy_tokens, aligned_tags)
+
+            # element in gold_spans is in the shape of (str(start), str(end), span)
+            # element in gold_spans_tags is tag id
             res_spans_labels.append([(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)])
 
             # 2.1.3 get NP chunk by spaCy. They are flat
@@ -305,7 +314,6 @@ class Processor(Label):
             # refer to https://www.nltk.org/api/nltk.tree.html#nltk.tree.Tree.fromstring
             spa_cons_tree = Tree.fromstring(spa_cons_string)
 
-
             # filter out all the NP\CD\ subtrees
             # We can use a filter function to restrict the Tree.subtrees we want,
             # refer to https://www.nltk.org/api/nltk.tree.html#nltk.tree.Tree.subtrees
@@ -315,52 +323,66 @@ class Processor(Label):
             # We initiate the start character index and end character index with -1.
             spa_subtrees_spans = [(-1, -1, ' '.join(subtree)) for subtree in spa_subtrees]
             spacy_result += self._convert_ch_position(sent, spa_subtrees_spans)
+            tmp_sent = ' '.join(spa_cons_tree.flatten()[:])  # get the sentence from the constituency parse tree
+            spacy_result += self._convert_ch_position(tmp_sent, spa_subtrees_spans)
 
-            # 2.2 stanza
-            # 2.2.1 get spans by stanza
-            # refer to https://stanfordnlp.github.io/stanza/constituency.html
-            # Here, Constituency parser of Stanza will split compound words formed by hyphen (-) into several words
-            # e.g., 'United-States' will be split into 'United', '-' and 'States'
-            sta_cons_string = sta_doc.sentences[0].constituency  # constituency parse tree (String) of the sentence
-            res_sta_cons_string.append(repr(sta_cons_string))
-            sta_cons_tree = Tree.fromstring(repr(sta_cons_string))   # convert string to nltk.tree.Tree
-
-            # filter out all the NP\CD subtrees
-            # We can use a filter function to restrict the Tree.subtrees we want,
-            sta_subtrees = [subtree.leaves() for subtree in sta_cons_tree.subtrees(lambda t: t.label() in self.config['cand_constituent'])]
-
-            # get stanza spans
-            stanza_spans = [(-1, -1, ' '.join(subtree)) for subtree in sta_subtrees]
-            stanza_result = self._convert_ch_position(sent, stanza_spans)
+            # # 2.2 stanza
+            # # 2.2.1 get spans by stanza
+            # # refer to https://stanfordnlp.github.io/stanza/constituency.html
+            # # Here, Constituency parser of Stanza will split compound words formed by hyphen (-) into several words
+            # # e.g., 'United-States' will be split into 'United', '-' and 'States'
+            # sta_cons_string = sta_doc.sentences[0].constituency  # constituency parse tree (String) of the sentence
+            # res_sta_cons_string.append(repr(sta_cons_string))
+            # sta_cons_tree = Tree.fromstring(repr(sta_cons_string))   # convert string to nltk.tree.Tree
+            #
+            # # filter out all the NP\CD subtrees
+            # # We can use a filter function to restrict the Tree.subtrees we want,
+            # sta_subtrees = [subtree.leaves() for subtree in sta_cons_tree.subtrees(lambda t: t.label() in self.config['cand_constituent'])]
+            #
+            # # get stanza spans
+            # stanza_spans = [(-1, -1, ' '.join(subtree)) for subtree in sta_subtrees]
+            # stanza_result = self._convert_ch_position(sent, stanza_spans)
 
             # 2.3. Select the union of two parsers' recognition results
             # convert start/end index to string, to be consistent with the format of spans. This operation ensures
             # that the tuple is successfully converted to pyarrow and then serialized into a JSON/JSONL array
             max_span_len = self.config['span_portion'] * len(sent)
 
-            assert self.config['mode'] in ['strict', 'loose'], f"mode must be one of ('strict', loose)!"
-            if self.config['mode'] == 'strict':
-                # In strict (default) mode, we get spans based on intersection of spaCy and Stanza results.
-                spans = [(str(start), str(end), text)
-                         for start, end, text in list(set(spacy_result) & set(stanza_result))
-                         if len(text) <= max_span_len  # filter out long span
-                         ]
-            else:
-                # In loose mode, we get spans based on union of spaCy and Stanza results.
-                spans = [(str(start), str(end), text)
-                         for start, end, text in list(set(spacy_result) | set(stanza_result))
-                         if len(text) <= max_span_len  # filter out long span
-                         ]
+            # assert self.config['mode'] in ['strict', 'loose'], f"mode must be one of ('strict', loose)!"
+            # if self.config['mode'] == 'strict':
+            #     # In strict (default) mode, we get spans based on intersection of spaCy and Stanza results.
+            #     spans = [(str(start), str(end), text)
+            #              for start, end, text in list(set(spacy_result) & set(stanza_result))
+            #              if len(text) <= max_span_len  # filter out long span
+            #              ]
+            # else:
+            #     # In loose mode, we get spans based on union of spaCy and Stanza results.
+            #     spans = [(str(start), str(end), text)
+            #              for start, end, text in list(set(spacy_result) | set(stanza_result))
+            #              if len(text) <= max_span_len  # filter out long span
+            #              ]
+            spans = [(str(start), str(end), text)
+                     for start, end, text in set(spacy_result) if len(text) <= max_span_len  # filter out long span
+                     ]
 
             res_spans.append(spans)
+
+            # 2.4. There are spans identified by the parser, which are not gold spans.
+            # Their labels should be set to 'O'. After that， they are included as part of the gold spans and labels.
+            # So that we can expand the gold spans and labels
+            ex_spans_labels = [(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)]
+            o_tag = str(self.covert_tag2id[self.label2id['O']])
+            ex_spans_labels += [(*span, o_tag) for span in spans if span not in gold_spans]
+            res_ex_spans_labels.append(ex_spans_labels)
 
         return {
             'tokens': instances['tokens'],
             'tags': instances['tags'],
             'spans': res_spans,  # the spans of the instances, predicted by the spaCy and stanza parsers, shape like (start, end, mention_span)
             'spans_labels': res_spans_labels,  # store the gold spans and labels of the instances, shape like (start, end, gold_mention_span, gold_label)
+            'expand_spans_labels': res_ex_spans_labels,   # store the expanded gold spans and labels, shape like (start, end, expanded_gold_mention_span, expanded_gold_label_id)
             'spa_cons_string': res_spa_cons_string,  # constituency parse tree of the instances, predicted by the spaCy parser
-            'sta_cons_string': res_sta_cons_string  # constituency parse tree of the instances, predicted by the stanza parser
+            # 'sta_cons_string': res_sta_cons_string  # constituency parse tree of the instances, predicted by the stanza parser
         }
 
     def process(self):
@@ -371,14 +393,14 @@ class Processor(Label):
             with_rank = False
             continue_dir = os.path.join(self.config['continue_dir'], 'gold_span')
         else:
-            save_dir = os.path.join(self.config['save_dir'], 'span', self.config['mode'])
+            save_dir = os.path.join(self.config['save_dir'], 'span')
             process_func = self.data_format_span
             # with_rank is used to determine whether to assign a value to the rank parameter in the map function
             # we use rank number to specify the GPU device to be used by stanza and spaCy in the different processing
             with_rank = True
             # batch_size = self.config['batch_num_per_device'] * self.config['batch_size_per_device']
-            continue_dir = os.path.join(self.config['continue_dir'], 'span', self.config['mode'])
-            quality_res_dir = os.path.join(self.config['eval_dir'], 'span', self.config['mode'])
+            continue_dir = os.path.join(self.config['continue_dir'], 'span')
+            quality_res_dir = os.path.join(self.config['eval_dir'], 'span')
             if not os.path.exists(quality_res_dir):
                 os.makedirs(quality_res_dir)
 

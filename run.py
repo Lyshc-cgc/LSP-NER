@@ -10,8 +10,8 @@ def main():
     formated_dataset = proc.process()
 
     # 2. annotate the data by LLMs
-    # anno = Annotation(config['anno_cfg'])
-    # anno.annotate_by_all(formated_dataset, quality=True)
+    anno = Annotation(config['anno_cfg'])
+    anno.annotate_by_all(formated_dataset, quality=True)
 
 if __name__ == '__main__':
     main()

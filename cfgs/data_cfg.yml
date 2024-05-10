@@ -5,10 +5,10 @@ num_proc: 6
 
 # process config
 gold_span: False  # if True, we use gold span from OntoNotes5. If False, we get span from scratch by spaCy and stanza parsers
-batch_size: 2048 # batch size for data processing
+batch_size: 4096 # batch size for data processing
 split: test  # train, dev, test
 shuffle: True  # whether to shuffle the data
-select: 1600  # select a subset of data. If you want to use all data, set select as 0 or empty
+select: 1000  # select a subset of data. If you want to use all data, set select as 0 or empty
 save_dir: data/preprocess  # the directory to store the preprocessed data
 continue: True  # whether to continue to use the data last time
 continue_dir: data/continue  # the directory to store the continued data to be annotated
@@ -23,7 +23,7 @@ eval_quality: True  # whether to evaluate the quality of the spans recognized by
 # strict or loose. In strict mode, we get spans based on intersection of spaCy and Stanza results.
 # In loose mode, we get spans based on union of spaCy and Stanza results.
 cuda_devices: all  # specify which GPU to use, 'all' or comma-split str like '0,1,2,...,n-1' (consume that you have n GPUs)
-mode: loose  # strict or loose
+#mode: loose  # strict or loose
 span_portion: 0.4  # The proportion of the longest span length to sentence length. To filter out long span.
 cand_constituent:  # the candidate constituent labels to be extracted from the constituency parsing results
   - NP  # noun phrase
@@ -33,8 +33,9 @@ cand_constituent:  # the candidate constituent labels to be extracted from the c
   - ADVP  # adverb phrase
   - NNP  # Proper noun, singular
   - NNPS  #  Proper noun, plural
+  - NML # nominal
+  - QP  # Quantifier phrase
 #  - NN  # Noun, singular or mass
-#  - QP  # Quantifier phrase
 #  - PP  # Prepositional phrase
 spacy_model:
   # https://spacy.io/api/top-level#spacy.load

@@ -62,15 +62,20 @@ class Annotation(Label):
         return chat_message
 
     @staticmethod
-    def _generate_chat_messages(instances, chat_message_template):
+    def _generate_chat_messages(instances, chat_message_template, gold_span=True):
         """
         Generate chat messages for each instance. Meanwhile, init the labels for each instance.
 
         :param instances: The instances to be annotated.
         :param chat_message_template: The chat message template for the annotating model.
+        :param gold_span: Whether to use the gold span from the annotation.
         :return:
         """
-        for sent_id, (tokens, spans, spans_labels) in enumerate(zip(instances['tokens'], instances['spans'], instances['spans_labels'])):
+        if gold_span:
+            spans_labels_key = 'spans_labels'
+        else:
+            spans_labels_key = 'expand_spans_labels'  # to get the expanded spans labels
+        for sent_id, (tokens, spans, spans_labels) in enumerate(zip(instances['tokens'], instances['spans'], instances[spans_labels_key])):
             for (start, end, entity_mention), label in zip(spans, spans_labels):
                 start, end = int(start), int(end)
                 sentence = ' '.join(tokens[:start] + ['[ ', entity_mention, ' ]'] + tokens[end:])
@@ -80,7 +85,7 @@ class Annotation(Label):
                 chat_message[-1] = {"role": "user", "content": query}
                 # if self.config['gold_span'] is True, label is the ground truth label id
                 # yield the ID of the sentences, the mention span, the label id of the entity mention and the chat message
-                # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label)
+                # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
                 # yield the ID of the sentences, the mention span, gold span and the chat message
                 span = (str(start), str(end), entity_mention)
                 yield sent_id, span, label, chat_message
@@ -177,15 +182,18 @@ class Annotation(Label):
 
             # 3. batch process
             # yield sent_id, span, span_label, chat_message
-            pbar = tqdm(fu.batched(self._generate_chat_messages(dataset,chat_message_template
-                                                             ),anno_cfg['anno_bs']),desc=f'annotating by {annotator_name}')
+            pbar = tqdm(fu.batched(self._generate_chat_messages(instances=dataset,
+                                                                chat_message_template=chat_message_template,
+                                                                gold_span=self.config['gold_span']),
+                                   anno_cfg['anno_bs']),
+                        desc=f'annotating by {annotator_name}')
 
             res_labels, res_label_ids = [], []  # store the output labels and label ids
 
             # if self.config['gold_span'] is True, we use gold span from annotation
-            # y_true stores the ground truth label ids
+            # y_true stores the ground truth label ids, shaped like [label_id_0, label_id_1, ...]
             # else, we get the span from scratch by spaCy and stanza parsers
-            # y_true stores the gold span and its label in a tuple
+            # y_true stores the expanded gold span and its label in a tuple, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
             y_true = []
             pred_spans = [] # store the predicted spans and its label
 
@@ -195,7 +203,7 @@ class Annotation(Label):
                 batch_pred_spans = []  # store the predicted spans and its label for each batch
                 for sent_id, span, label, chat in batch:
                     # if self.config['gold_span'] is True, label is the ground truth label id
-                    # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label)
+                    # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
                     batch_sent_ids.append(sent_id)
                     batch_spans.append(span)
                     batch_labels.append(label)
@@ -249,14 +257,14 @@ class Annotation(Label):
             # 5. cache and evaluate the annotation result
             if self.config['gold_span']:
                 cache_result = {
-                    "y_true": y_true,  # the ground truth label ids
+                    "y_true": y_true,  # the ground truth label ids, shaped like [label_id_0, label_id_1, ...]
                     "labels": res_labels,
                     "label_ids": res_label_ids
                 }
 
             else:
                 cache_result = {
-                    "y_true": y_true,  # the gold span and its label
+                    "y_true": y_true,  # the expanded gold span and its label, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
                     "pred_spans": pred_spans
                 }
 
@@ -301,7 +309,7 @@ class Annotation(Label):
             if self.config['gold_span']:
                 qual_res_file = os.path.join(self.config['eval_dir'], 'gold_span', 'quality_res.txt')
             else:
-                qual_res_file = os.path.join(self.config['eval_dir'], 'span', 'quality_res.txt')
+                qual_res_file = os.path.join(self.config['eval_dir'], 'span','quality_res.txt')
             quality_data = np.array(quality_data)  # quality_data with shape (num_annotators, num_instances)
             # quality_data with shape (num_instances, num_annotators)
             # transpose the quality_data to get the shape (num_instances, num_annotators)
@@ -313,13 +321,16 @@ class Annotation(Label):
     def evaluate(self, y_true, y_pred, annotator_name: str):
         """
         Evaluate the annotation results by an annotator.
-        :param y_true:
-        :param y_pred:
-        :param annotator_name:
+        :param y_true: if self.config['gold_span'] is True, we use gold span from annotation, y_true stores the ground truth label ids, shaped like
+        [label_id_0, label_id_1, ...]. Else, we get the span from scratch by parser, y_true stores the expanded gold span and their labels in a tuple,
+        shaped like [(start, end, gold_mention_span, gold_label_id), ...].
+        :param y_pred: if self.config['gold_span'] is True, y_pred stores the predicted label ids. Else, y_pred stores the predicted spans and their labels.
+        :param annotator_name: the name of the annotator LLM.
         :return:
         """
-        # compute all evaluation metrics
+
         if self.config['gold_span']:
+            # compute all classification metrics
             eval_results = {'f1-macro': f1_score(y_true=y_true, y_pred=y_pred, average='macro'),
                             'precision-weighted': precision_score(y_true=y_true, y_pred=y_pred, average='weighted', zero_division=0),
                             'recall-weighted': recall_score(y_true=y_true, y_pred=y_pred, average='weighted', zero_division=0),
@@ -328,6 +339,7 @@ class Annotation(Label):
                             'cohen_kappa_score': cohen_kappa_score(y1=y_true, y2=y_pred)}
             res_cache_dir = os.path.join(self.config['eval_dir'], 'gold_span')
         else:
+            # compute span-level metrics
             eval_results = fu.compute_span_f1(y_true, y_pred)
             res_cache_dir = os.path.join(self.config['eval_dir'], 'span')
 
