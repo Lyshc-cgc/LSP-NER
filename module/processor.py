@@ -127,7 +127,7 @@ class Processor(Label):
     @staticmethod
     def _eval_span_quality(dataset, split=None):
         """
-        Evaluate the quality of the spans recognized by stanza and spaCy parsers.
+        Evaluate the quality of the spans recognized and spaCy parsers.
         :param dataset: list, the dataset containing 4 fields ('tokens', 'tags' 'spans' and 'spans_labels'), where 'spans'
             are the spans recognized by the parsers. 'spans_labels' are the gold spans and their labels.
         :param split: str, the split name of the dataset.
@@ -207,13 +207,12 @@ class Processor(Label):
 
     def data_format_span(self, instances, rank=0):
         """
-        Using stanza and spacy to get the span from scratch. Do not use gold annotated spans.
+        Using spacy to get the span from scratch. Do not use gold annotated spans.
         :param instances: Dict[str, List], A batch of instances.
         :param rank: The rank of the current process. It will be automatically assigned a value when multiprocess is
             enabled in the map function.
         :return:
         """
-        import stanza
         import spacy
         import benepar
         import torch
@@ -223,7 +222,7 @@ class Processor(Label):
         # 0. some settings
         # 0.1 GPU settings
         if self.config['cuda_devices'] == 'all':
-            # set the GPU can be used by stanza in this process
+            # set the GPU can be used  in this process
             os.environ["CUDA_VISIBLE_DEVICES"] = str(rank % torch.cuda.device_count())
 
             # specify the GPU to be used by spaCy, which should be same as above
@@ -238,7 +237,7 @@ class Processor(Label):
             spacy.prefer_gpu(int(cuda_devices[gpu_id]))
 
         # 0.2 spaCy setting
-        # load a spaCy and a stanza model in each process
+        # load a spaCy model in each process
         spacy_nlp = spacy.load(name=self.config['spacy_model']['name'])
         spacy_nlp = self._modify_spacy_tokenizer(spacy_nlp)  # modify the spaCy tokenizer
 
@@ -247,15 +246,11 @@ class Processor(Label):
         # and https://github.com/nikitakit/self-attentive-parser
         spacy_nlp.add_pipe('benepar', config={'model': 'benepar_en3_large'})
 
-        # 0.3 stanza setting
-        # stanza_nlp = stanza.Pipeline(**self.config['stanza_model'], download_method=None)
-
-        # 0.4 init the result
-        res_spans = []  # store the spans of the instances, predicted by the spaCy and stanza parsers
+        # 0.3 init the result
+        res_spans = []  # store the spans of the instances, predicted by the spaCy parsers
         res_spans_labels = []  # store the gold spans and labels of the instances
         res_ex_spans_labels = []  # store the expanded gold spans and labels of the instances
         res_spa_cons_string = []  # store the constituency parse tree of the instances, predicted by the spaCy parser
-        # res_sta_cons_string = []  # store the constituency parse tree of the instances, predicted by the stanza parser
 
         # main process
         all_raw_tokens, all_raw_tags = instances['tokens'], instances['tags']
@@ -270,10 +265,6 @@ class Processor(Label):
         # 2) https://spacy.io/api/language#pipe
         spacy_docs = list(spacy_nlp.pipe(sents))  # covert generator to list
 
-        # refer to https://stanfordnlp.github.io/stanza/getting_started.html#processing-multiple-documents
-        # stanza_docs = stanza_nlp.bulk_process(sents)
-
-        # for sent, raw_tokens, raw_tags, spa_doc, sta_doc in zip(sents, all_raw_tokens, all_raw_tags, spacy_docs, stanza_docs):
         for sent, raw_tokens, raw_tags, spa_doc in zip(sents, all_raw_tokens, all_raw_tags, spacy_docs):
             # 2.1 spaCy
             # 2.1.1 get tag and token alignment between sentence tokenized by spaCy and raw sentence
@@ -326,23 +317,6 @@ class Processor(Label):
             tmp_sent = ' '.join(spa_cons_tree.flatten()[:])  # get the sentence from the constituency parse tree
             spacy_result += self._convert_ch_position(tmp_sent, spa_subtrees_spans)
 
-            # # 2.2 stanza
-            # # 2.2.1 get spans by stanza
-            # # refer to https://stanfordnlp.github.io/stanza/constituency.html
-            # # Here, Constituency parser of Stanza will split compound words formed by hyphen (-) into several words
-            # # e.g., 'United-States' will be split into 'United', '-' and 'States'
-            # sta_cons_string = sta_doc.sentences[0].constituency  # constituency parse tree (String) of the sentence
-            # res_sta_cons_string.append(repr(sta_cons_string))
-            # sta_cons_tree = Tree.fromstring(repr(sta_cons_string))   # convert string to nltk.tree.Tree
-            #
-            # # filter out all the NP\CD subtrees
-            # # We can use a filter function to restrict the Tree.subtrees we want,
-            # sta_subtrees = [subtree.leaves() for subtree in sta_cons_tree.subtrees(lambda t: t.label() in self.config['cand_constituent'])]
-            #
-            # # get stanza spans
-            # stanza_spans = [(-1, -1, ' '.join(subtree)) for subtree in sta_subtrees]
-            # stanza_result = self._convert_ch_position(sent, stanza_spans)
-
             # 2.3. Select the union of two parsers' recognition results
             # convert start/end index to string, to be consistent with the format of spans. This operation ensures
             # that the tuple is successfully converted to pyarrow and then serialized into a JSON/JSONL array
@@ -378,11 +352,10 @@ class Processor(Label):
         return {
             'tokens': instances['tokens'],
             'tags': instances['tags'],
-            'spans': res_spans,  # the spans of the instances, predicted by the spaCy and stanza parsers, shape like (start, end, mention_span)
+            'spans': res_spans,  # the spans of the instances, predicted by the spaCy parser, shape like (start, end, mention_span)
             'spans_labels': res_spans_labels,  # store the gold spans and labels of the instances, shape like (start, end, gold_mention_span, gold_label)
             'expand_spans_labels': res_ex_spans_labels,   # store the expanded gold spans and labels, shape like (start, end, expanded_gold_mention_span, expanded_gold_label_id)
             'spa_cons_string': res_spa_cons_string,  # constituency parse tree of the instances, predicted by the spaCy parser
-            # 'sta_cons_string': res_sta_cons_string  # constituency parse tree of the instances, predicted by the stanza parser
         }
 
     def process(self):
@@ -396,7 +369,7 @@ class Processor(Label):
             save_dir = os.path.join(self.config['save_dir'], 'span')
             process_func = self.data_format_span
             # with_rank is used to determine whether to assign a value to the rank parameter in the map function
-            # we use rank number to specify the GPU device to be used by stanza and spaCy in the different processing
+            # we use rank number to specify the GPU device to be used by spaCy in the different processing
             with_rank = True
             # batch_size = self.config['batch_num_per_device'] * self.config['batch_size_per_device']
             continue_dir = os.path.join(self.config['continue_dir'], 'span')
@@ -423,7 +396,7 @@ class Processor(Label):
             os.makedirs(self.config['save_dir'], exist_ok=True)
             formated_dataset.save_to_disk(save_dir)
 
-        # 3. if the self.config['gold_span'] is False, we get span from scratch by stanza and spaCy
+        # 3. if the self.config['gold_span'] is False, we get span from scratch by spaCy
         # we need to evaluate spans quality the formatted dataset
         if self.config['eval_quality']:
             quality_res = self._eval_span_quality(formated_dataset)

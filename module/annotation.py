@@ -55,6 +55,7 @@ class Annotation(Label):
             usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
                                                                task_prompt=self.config['task_prompt'],
                                                                types_prompt=self.config['types_prompt'],
+                                                               guidelines=self.config['guidelines'],
                                                                examples=examples,
                                                                query=query)
             # e.g., for mistral and Yi, we only need to input the user's prompt
@@ -71,12 +72,8 @@ class Annotation(Label):
         :param gold_span: Whether to use the gold span from the annotation.
         :return:
         """
-        if gold_span:
-            spans_labels_key = 'spans_labels'
-        else:
-            spans_labels_key = 'expand_spans_labels'  # to get the expanded spans labels
-        for sent_id, (tokens, spans, spans_labels) in enumerate(zip(instances['tokens'], instances['spans'], instances[spans_labels_key])):
-            for (start, end, entity_mention), label in zip(spans, spans_labels):
+        for sent_id, (tokens, spans, spans_labels) in enumerate(zip(instances['tokens'], instances['spans'], instances['spans_labels'])):
+            for idx, (start, end, entity_mention) in enumerate(spans):
                 start, end = int(start), int(end)
                 sentence = ' '.join(tokens[:start] + ['[ ', entity_mention, ' ]'] + tokens[end:])
 
@@ -88,7 +85,14 @@ class Annotation(Label):
                 # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
                 # yield the ID of the sentences, the mention span, gold span and the chat message
                 span = (str(start), str(end), entity_mention)
-                yield sent_id, span, label, chat_message
+                if gold_span:  # use the gold span from the annotation
+                    # In this case, entity mentions and gold labels are one-to-one
+                    label = spans_labels[idx]
+                    yield sent_id, span, label, chat_message
+
+                else: # get the span from scratch by spaCy parsers
+                    # In this case, entity mention and gold spans with labels are not one-to-one
+                    yield sent_id, span, chat_message
 
     @staticmethod
     def _process_output_text(output_text):
@@ -106,9 +110,10 @@ class Annotation(Label):
             result = re.search(pattern, output_text, re.DOTALL)  # only extract the first JSON string
             if result:
                 try:
-                    out_label = json.loads(result.group())['answer'].strip()
+                    json_string = '{' + result.group(1) + '}'
+                    out_label = json.loads(json_string)['answer'].strip()
                     break
-                except json.JSONDecodeError:
+                except (json.decoder.JSONDecodeError, KeyError):
                     continue
         return out_label
 
@@ -193,22 +198,31 @@ class Annotation(Label):
             # if self.config['gold_span'] is True, we use gold span from annotation
             # y_true stores the ground truth label ids, shaped like [label_id_0, label_id_1, ...]
             # else, we get the span from scratch by spaCy and stanza parsers
-            # y_true stores the expanded gold span and its label in a tuple, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
+            # y_true stores the gold span and its label in a tuple, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
             y_true = []
             pred_spans = [] # store the predicted spans and its label
 
-            for batch in pbar:  # batch is a tuple like ((sent_id_0, span_0, label_0, chat_0),(sent_id_1, span_1, label_1, chat_1)...)
+            for batch in pbar:
+                # if self.config['gold_span'] is true,
+                # batch is a tuple like ((sent_id_0, span_0, label_0, chat_0),(sent_id_1, span_1, label_1, chat_1)...)
+                # else, batch is a tuple like ((sent_id_0, span_0, chat_0),(sent_id_1, span_1, chat_1)...)
+                # we use sent id to get its gold span labels
                 batch_sent_ids, batch_spans, batch_labels, batch_chats = [], [], [], []  # store the sent_id, span, the gold label ids / the gold spans, chat for each batch
                 batch_res_label_ids = []  # store the output label ids for each batch to evaluate
-                batch_pred_spans = []  # store the predicted spans and its label for each batch
-                for sent_id, span, label, chat in batch:
-                    # if self.config['gold_span'] is True, label is the ground truth label id
-                    # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
-                    batch_sent_ids.append(sent_id)
-                    batch_spans.append(span)
-                    batch_labels.append(label)
-                    y_true.append(label)
-                    batch_chats.append(chat)
+                if self.config['gold_span']:
+                    for sent_id, span, label, chat in batch:
+                        # if self.config['gold_span'] is True, label is the ground truth label id
+                        # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
+                        batch_sent_ids.append(sent_id)
+                        batch_spans.append(span)
+                        batch_labels.append(label)
+                        y_true.append(label)
+                        batch_chats.append(chat)
+                else:
+                    for sent_id, span, chat in batch:
+                        batch_sent_ids.append(sent_id)
+                        batch_spans.append(span)
+                        batch_chats.append(chat)
 
                 # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
                 templated_batch_chats = anno_tokenizer.apply_chat_template(batch_chats, add_generation_prompt=True, tokenize=False)
@@ -234,7 +248,6 @@ class Annotation(Label):
                     res_labels.append(out_label)
                     res_label_ids.append(out_label_id)
                     batch_res_label_ids.append(out_label_id)
-                    batch_pred_spans.append((*span, str(out_label_id)))
                     pred_spans.append((*span, str(out_label_id)))
 
                 # evaluate batch results
@@ -246,11 +259,6 @@ class Annotation(Label):
                                'matthews_corrcoef': matthews_corrcoef(y_true=batch_labels, y_pred=batch_res_label_ids),
                                'cohen_kappa_score': cohen_kappa_score(y1=batch_labels, y2=batch_res_label_ids)
                                })
-                else:
-                    batch_res = fu.compute_span_f1(batch_pred_spans, batch_labels)
-                    wandb.log({'precision': batch_res['precision'],
-                               'recall': batch_res['recall'],
-                               'f1-micro': batch_res['f1']})
 
             ray.shutdown()
 
@@ -258,14 +266,22 @@ class Annotation(Label):
             if self.config['gold_span']:
                 cache_result = {
                     "y_true": y_true,  # the ground truth label ids, shaped like [label_id_0, label_id_1, ...]
-                    "labels": res_labels,
-                    "label_ids": res_label_ids
+                    "labels": res_labels,  # the output labels, shaped like [label_0, label_1, ...]
+                    "label_ids": res_label_ids  # the output label ids, shaped like [label_id_0, label_id_1, ...]
                 }
 
             else:
+                # y_true is shape of [(start, end, gold_mention_span, gold_label_id), ...]
+                # pred_spans is shape of [(start, end, pred_mention_span, pred_label_id), ...],
+                # they are not one-to-one, so we convert them into 2-d list
+                res_y_true, res_pred_spans = [], []
+                y_true = [span_label for spans_labels in dataset['spans_labels'] for span_label in spans_labels]
+                res_y_true.append(y_true)
+                res_pred_spans.append(pred_spans)
+
                 cache_result = {
-                    "y_true": y_true,  # the expanded gold span and its label, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
-                    "pred_spans": pred_spans
+                    "y_true": res_y_true,  # the gold span and its label, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
+                    "pred_spans": res_pred_spans
                 }
 
             cache_result = Dataset.from_dict(cache_result)
@@ -276,7 +292,9 @@ class Annotation(Label):
         if self.config['gold_span']:
             self.evaluate(cache_result['y_true'], cache_result['label_ids'], annotator_name)
         else:
-            self.evaluate(cache_result['y_true'], cache_result['pred_spans'], annotator_name)
+            # remove the '0'('O' label) span from the pred_spans
+            pred_spans = [span for span in cache_result['pred_spans'][0] if int(span[-1]) != self.label2id['O']]
+            self.evaluate(cache_result['y_true'][0], pred_spans, annotator_name)
         return cache_result
 
     def annotate_by_all(self, dataset, quality=True):
@@ -322,7 +340,7 @@ class Annotation(Label):
         """
         Evaluate the annotation results by an annotator.
         :param y_true: if self.config['gold_span'] is True, we use gold span from annotation, y_true stores the ground truth label ids, shaped like
-        [label_id_0, label_id_1, ...]. Else, we get the span from scratch by parser, y_true stores the expanded gold span and their labels in a tuple,
+        [label_id_0, label_id_1, ...]. Else, we get the span from scratch by parser, y_true stores the gold span and their labels in a tuple,
         shaped like [(start, end, gold_mention_span, gold_label_id), ...].
         :param y_pred: if self.config['gold_span'] is True, y_pred stores the predicted label ids. Else, y_pred stores the predicted spans and their labels.
         :param annotator_name: the name of the annotator LLM.
@@ -340,7 +358,7 @@ class Annotation(Label):
             res_cache_dir = os.path.join(self.config['eval_dir'], 'gold_span')
         else:
             # compute span-level metrics
-            eval_results = fu.compute_span_f1(y_true, y_pred)
+            eval_results = fu.compute_span_f1(y_true,  y_pred)
             res_cache_dir = os.path.join(self.config['eval_dir'], 'span')
 
         if not os.path.exists(res_cache_dir):

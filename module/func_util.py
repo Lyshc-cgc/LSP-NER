@@ -80,11 +80,11 @@ def eval_anno_quality(data, metric='fleiss_kappa'):
             'upper_0.95_ci_bound': upper_ci_bound
         }
 
-def compute_span_f1(pred_spans, gold_spans):
+def compute_span_f1(gold_spans, pred_spans):
     """
     Compute the confusion matrix, span-level metrics such as precision, recall and F1-micro.
-    :param pred_spans: the spans predicted by the model.
     :param gold_spans: the gold spans in a batch.
+    :param pred_spans: the spans predicted by the model.
     :return:
     """
     true_positive, false_positive, false_negative = 0, 0, 0
