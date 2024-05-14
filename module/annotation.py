@@ -36,7 +36,9 @@ class Annotation(Label):
             # https://huggingface.co/TheBloke/nontoxic-bagel-34b-v0.2-GPTQ
             sys_prompt = self.config['prompt_template_chat'].format(system_role=self.config['system_role'],
                                                                     task_prompt=self.config['task_prompt'],
-                                                                    types_prompt=self.config['types_prompt'])
+                                                                    types_prompt=self.config['types_prompt'],
+                                                                    # guidelines=self.config['guidelines'],
+                                                                    )
             chat_message = [
                 {"role": "system", "content": sys_prompt},
             ]
@@ -52,70 +54,128 @@ class Annotation(Label):
                 instance = self.config['instance_template'].format(sentence=example['sentence'], output=example['output'])
                 examples += f'{idx + 1})\n{instance}'
             query = self.config['instance_template'].format(sentence='{sentence}', output='')
-            usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
-                                                               task_prompt=self.config['task_prompt'],
-                                                               types_prompt=self.config['types_prompt'],
-                                                               guidelines=self.config['guidelines'],
-                                                               examples=examples,
-                                                               query=query)
+            if self.config['guidelines']:
+                usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
+                                                                   task_prompt=self.config['task_prompt'],
+                                                                   types_prompt=self.config['types_prompt'],
+                                                                   guidelines=self.config['guidelines'],
+                                                                   examples=examples,
+                                                                   query=query)
+            else:
+                usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
+                                                                   task_prompt=self.config['task_prompt'],
+                                                                   types_prompt=self.config['types_prompt'],
+                                                                   examples=examples,
+                                                                   query=query)
             # e.g., for mistral and Yi, we only need to input the user's prompt
             chat_message = [{"role": "user", "content": usr_prompt}]
         return chat_message
 
-    @staticmethod
-    def _generate_chat_messages(instances, chat_message_template, gold_span=True):
+    def _init_chat_message_pt(self, anno_cfg) -> list[None | dict[str, str]]:
+        """
+        Init the chat messages for the annotation models to extract entity directly by annotators according the new prompt.
+
+        :param anno_cfg: The parameters of the annotation model.
+        :return:
+        """
+        if anno_cfg['chat']:
+            pass
+        else:
+            examples = ''
+            for idx, example in enumerate(self.config['examples']):
+                instance = self.config['instance_template'].format(label=example['label'],
+                                                                   sentence=example['sentence'],
+                                                                   output=example['output'])
+                examples += f'{idx + 1})\n{instance}\n'
+            query = self.config['instance_template'].format(label='{label}', sentence='{sentence}', output='')
+            if self.config['guidelines']:
+                usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
+                                                                   types_prompt=self.config['types_prompt'],
+                                                                   guidelines=self.config['guidelines'],
+                                                                   examples=examples,
+                                                                   query=query)
+            else:
+                usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
+                                                                   types_prompt=self.config['types_prompt'],
+                                                                   examples=examples,
+                                                                   query=query)
+            # e.g., for mistral and Yi, we only need to input the user's prompt
+            chat_message = [{"role": "user", "content": usr_prompt}]
+        return chat_message
+
+    def _generate_chat_messages(self, instances, chat_message_template):
         """
         Generate chat messages for each instance. Meanwhile, init the labels for each instance.
 
         :param instances: The instances to be annotated.
         :param chat_message_template: The chat message template for the annotating model.
-        :param gold_span: Whether to use the gold span from the annotation.
         :return:
         """
-        for sent_id, (tokens, spans, spans_labels) in enumerate(zip(instances['tokens'], instances['spans'], instances['spans_labels'])):
-            for idx, (start, end, entity_mention) in enumerate(spans):
-                start, end = int(start), int(end)
-                sentence = ' '.join(tokens[:start] + ['[ ', entity_mention, ' ]'] + tokens[end:])
+        for tokens, spans, spans_labels in zip(instances['tokens'], instances['spans'], instances['spans_labels']):
+            if not self.config['new_prompt']: # do not generate chat message using the new prompt to extract entity directly by annotators
+                for idx, (start, end, entity_mention) in enumerate(spans):
+                    start, end = int(start), int(end)
+                    sentence = ' '.join(tokens[:start] + ['[ ', entity_mention, ' ]'] + tokens[end:])
 
-                chat_message = copy.deepcopy(chat_message_template)
-                query = chat_message[-1]['content'].format(sentence=sentence)
-                chat_message[-1] = {"role": "user", "content": query}
-                # if self.config['gold_span'] is True, label is the ground truth label id
-                # yield the ID of the sentences, the mention span, the label id of the entity mention and the chat message
-                # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
-                # yield the ID of the sentences, the mention span, gold span and the chat message
-                span = (str(start), str(end), entity_mention)
-                if gold_span:  # use the gold span from the annotation
-                    # In this case, entity mentions and gold labels are one-to-one
-                    label = spans_labels[idx]
-                    yield sent_id, span, label, chat_message
+                    chat_message = copy.deepcopy(chat_message_template)
+                    query = chat_message[-1]['content'].format(sentence=sentence)
+                    chat_message[-1] = {"role": "user", "content": query}
+                    # if self.config['gold_span'] is True, label is the ground truth label id
+                    # yield the ID of the sentences, the mention span, the label id of the entity mention and the chat message
+                    # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
+                    # yield the ID of the sentences, the mention span, gold span and the chat message
+                    span = (str(start), str(end), entity_mention)
+                    if self.config['gold_span']:  # use the gold span from the annotation
+                        # In this case, entity mentions and gold labels are one-to-one
+                        label = spans_labels[idx]
+                        yield span, label, chat_message
 
-                else: # get the span from scratch by spaCy parsers
-                    # In this case, entity mention and gold spans with labels are not one-to-one
-                    yield sent_id, span, chat_message
+                    else: # get the span from scratch by spaCy parsers
+                        # In this case, entity mention and gold spans with labels are not one-to-one
+                        yield span, chat_message
+            else:  # generate chat message using the new prompt to extract entity directly by annotators
+                sentence = ' '.join(tokens)
+                for label, label_id in self.label2id.items():
+                    chat_message = copy.deepcopy(chat_message_template)
+                    query = chat_message[-1]['content'].format(label=label, sentence=sentence)
+                    chat_message[-1] = {"role": "user", "content": query}
+                    yield label_id, chat_message
 
     @staticmethod
-    def _process_output_text(output_text):
+    def _process_output_text(output_text, new_prompt=False):
         """
         process the output text to get the label of the entity mention.
         :param output_text: the text output by the annotator model
-        :return:
+        :param new_prompt: whether to use the new prompt to extract entity directly by annotators
+        :return: if the new_prompt is True, return the predicted spans and their labels.
         """
-        json_pattern = [r'\{\{(.*?)\}\}', r'\{(.*?)\}']  # the pattern to extract JSON string
-        output_text = output_text.strip().replace('\_', '_')
-        out_label = 'O'  # we assign 'O' to label to this span if we cannot extract the JSON string
 
-        # extract JSON string from output.outputs[0].text
-        for pattern in json_pattern:
-            result = re.search(pattern, output_text, re.DOTALL)  # only extract the first JSON string
-            if result:
-                try:
-                    json_string = '{' + result.group(1) + '}'
-                    out_label = json.loads(json_string)['answer'].strip()
-                    break
-                except (json.decoder.JSONDecodeError, KeyError):
-                    continue
-        return out_label
+        output_text = output_text.strip().replace('\_', '_')
+
+        if new_prompt:
+            # new_prompt is True, we recognize all entity mention given the type
+            pattern = r'@@(.*?)##'
+            results = re.finditer(pattern, output_text, re.DOTALL)
+            out_spans = [(-1, -1, res.group(1).strip()) for res in results]
+            out_spans = fu.convert_ch_position(output_text, out_spans)  # [(start_0, end_0, span_0),...]
+            return out_spans
+        else:
+            json_pattern = [r'\{\{(.*?)\}\}', r'\{(.*?)\}']  # the pattern to extract JSON string
+            # new_prompt is False, we classify the given entity mention in the output_text
+            # the out_label is just one label for the given entity mention
+            out_label = 'O'  # we assign 'O' to label to this span if we cannot extract the JSON string
+
+            # extract JSON string from output.outputs[0].text
+            for pattern in json_pattern:
+                result = re.search(pattern, output_text, re.DOTALL)  # only extract the first JSON string
+                if result:
+                    try:
+                        json_string = '{' + result.group(1) + '}'
+                        out_label = json.loads(json_string)['answer'].strip()
+                        break
+                    except (json.decoder.JSONDecodeError, KeyError):
+                        continue
+            return out_label
 
     def annotate_by_one(self, dataset, queue, **anno_cfg):
         """
@@ -183,13 +243,12 @@ class Annotation(Label):
             anno_tokenizer = anno_model.llm_engine.tokenizer.tokenizer
 
             # 2. Init the chat messages
-            chat_message_template = self._init_chat_message(anno_cfg)
+            chat_message_template = self._init_chat_message(anno_cfg) if not self.config['new_prompt'] else self._init_chat_message_pt(anno_cfg)
 
             # 3. batch process
-            # yield sent_id, span, span_label, chat_message
+            # yield span, span_label, chat_message
             pbar = tqdm(fu.batched(self._generate_chat_messages(instances=dataset,
-                                                                chat_message_template=chat_message_template,
-                                                                gold_span=self.config['gold_span']),
+                                                                chat_message_template=chat_message_template,),
                                    anno_cfg['anno_bs']),
                         desc=f'annotating by {annotator_name}')
 
@@ -203,52 +262,64 @@ class Annotation(Label):
             pred_spans = [] # store the predicted spans and its label
 
             for batch in pbar:
-                # if self.config['gold_span'] is true,
-                # batch is a tuple like ((sent_id_0, span_0, label_0, chat_0),(sent_id_1, span_1, label_1, chat_1)...)
-                # else, batch is a tuple like ((sent_id_0, span_0, chat_0),(sent_id_1, span_1, chat_1)...)
-                # we use sent id to get its gold span labels
-                batch_sent_ids, batch_spans, batch_labels, batch_chats = [], [], [], []  # store the sent_id, span, the gold label ids / the gold spans, chat for each batch
+                batch_spans, batch_labels, batch_chats = [], [], []  # store the span, the gold label ids / the gold spans, chat for each batch
                 batch_res_label_ids = []  # store the output label ids for each batch to evaluate
-                if self.config['gold_span']:
-                    for sent_id, span, label, chat in batch:
-                        # if self.config['gold_span'] is True, label is the ground truth label id
-                        # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
-                        batch_sent_ids.append(sent_id)
-                        batch_spans.append(span)
-                        batch_labels.append(label)
-                        y_true.append(label)
+                if self.config['new_prompt']:
+                    # if self.config['new_prompt'] is True, batch is a tuple like ((label_0, chat_0), (label_1, chat_1),...)
+                    for label_id, chat in batch:
+                        batch_labels.append(label_id)
                         batch_chats.append(chat)
                 else:
-                    for sent_id, span, chat in batch:
-                        batch_sent_ids.append(sent_id)
-                        batch_spans.append(span)
-                        batch_chats.append(chat)
+                    if self.config['gold_span']:
+                        # if self.config['gold_span'] is true,
+                        # batch is a tuple like ((span_0, label_0, chat_0),(span_1, label_1, chat_1)...)
+                        for span, label, chat in batch:
+                            # if self.config['gold_span'] is True, label is the ground truth label id
+                            # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
+                            batch_spans.append(span)
+                            batch_labels.append(label)
+                            y_true.append(label)
+                            batch_chats.append(chat)
+                    else:
+                        # else, batch is a tuple like ((span_0, chat_0),(span_1, chat_1)...)
+                        # we  get all gold span labels after annotation
+                        for span, chat in batch:
+                            batch_spans.append(span)
+                            batch_chats.append(chat)
 
                 # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
                 templated_batch_chats = anno_tokenizer.apply_chat_template(batch_chats, add_generation_prompt=True, tokenize=False)
                 outputs = anno_model.generate(templated_batch_chats, sampling_params)  # annotate
                 # for test
-                # test_answer = []
-                # for output in outputs:
-                #     test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
-                for sent_id, span, output in zip(batch_sent_ids, batch_spans, outputs):
-                    out_label = self._process_output_text(output.outputs[0].text)
-                    if out_label not in self.label2id.keys():
-                        # check if the output label is redundant
-                        tmp_out_label_0 = out_label.split(' ')[0].strip()
-                        tmp_out_label_1 = out_label.split(',')[0].strip()
-                        if tmp_out_label_0 in self.label2id.keys():
-                            out_label = tmp_out_label_0
-                        elif tmp_out_label_1 in self.label2id.keys():
-                            out_label = tmp_out_label_1
-                        else:
-                            out_label = 'O'
+                test_answer = []
+                for output in outputs:
+                    test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
+                for out_idx, output in enumerate(outputs):
+                    if self.config['new_prompt']:
+                        out_spans = self._process_output_text(output.outputs[0].text, new_prompt=self.config['new_prompt'])
+                        if len(out_spans) == 0:
+                            continue
+                        out_label_id = batch_labels[out_idx]
+                        pred_spans += [(*out_span, str(out_label_id)) for out_span in set(out_spans)]
+                    else:
+                        out_label = self._process_output_text(output.outputs[0].text, new_prompt=self.config['new_prompt'])
+                        if out_label not in self.label2id.keys():
+                            # check if the output label is redundant
+                            tmp_out_label_0 = out_label.split(' ')[0].strip()
+                            tmp_out_label_1 = out_label.split(',')[0].strip()
+                            if tmp_out_label_0 in self.label2id.keys():
+                                out_label = tmp_out_label_0
+                            elif tmp_out_label_1 in self.label2id.keys():
+                                out_label = tmp_out_label_1
+                            else:
+                                out_label = 'O'
 
-                    out_label_id = self.label2id[out_label]
-                    res_labels.append(out_label)
-                    res_label_ids.append(out_label_id)
-                    batch_res_label_ids.append(out_label_id)
-                    pred_spans.append((*span, str(out_label_id)))
+                        out_label_id = self.label2id[out_label]
+                        res_labels.append(out_label)
+                        res_label_ids.append(out_label_id)
+                        batch_res_label_ids.append(out_label_id)
+                        out_span = batch_spans[out_idx]
+                        pred_spans.append((*out_span, str(out_label_id)))
 
                 # evaluate batch results
                 if self.config['gold_span']:

@@ -4,6 +4,7 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/anno_res  # cache directory
 eval_dir: data/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
+new_prompt: False  # whether to generate chat message using the new prompt to extract entity directly by annotators
 
 prompt_template: >-
   {system_role}
@@ -46,7 +47,7 @@ system_role: >-
 
 task_prompt: >-
   You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']'), 
-  where '[' refers to the start of the entity mention and ']' reffers to the end of the entity mention.
+  where '[' refers to the start of the entity mention and ']' refers to the end of the entity mention.
   First, you need to determine if the mention is a special named entity instead of a common noun phrase.
   Then, you should annotate the given entity mention using the provided types.
   If there is no suitable type, you can choose 'O' as answer.

@@ -1,4 +1,3 @@
-import re
 import os
 import copy
 import multiprocess
@@ -86,43 +85,6 @@ class Processor(Label):
             instance_spans.append((str(start), str(end), ' '.join(span)))
             instance_spans_labels.append(self.covert_tag2id[tags[start]])
         return instance_spans, instance_spans_labels
-
-    @staticmethod
-    def _convert_ch_position(sent, target_spans):
-        """
-        convert the start/end character position of the span to the start/end position of the span.
-        For instance, a 'I am a student.' is tokenized into ['I', 'am', 'a', 'student', '.'].
-        The start/end character position of the span 'student' is 7/14, and the start/end position of the span is 3/4.
-        :param sent: original sentence
-        :param target_spans: A list of target span
-        :return:
-        """
-        res_spans = []
-        for start_ch_pos, end_ch_pos, span in target_spans:
-
-            if start_ch_pos == -1 and end_ch_pos == -1:  # -1 means the start/end character index is not available
-                # Find the start character index and end character index of the first matched NP span.
-                re_span = re.escape(span)  # escape special characters in the span
-                pattern_0 = r"\b(" + re_span + r")\b"  # match the whole span after escaping special characters
-                pattern_1 = r"\s(" + re_span + r")\s"  # match the span surrounded by spaces after escaping special characters
-                patterns = [pattern_0, pattern_1]
-                res_matches = []
-                for pattern in patterns:
-                    matches = re.finditer(pattern, sent)
-                    res_matches += [match for match in matches]
-
-                for match in res_matches:
-                    start_ch_idx, end_ch_idx = match.span(1)  # get the capture group 1
-                    # To get the start position of the first word of the matched NP span,
-                    # we just need to count the number of spaces before the start character
-                    start = sent[:start_ch_idx].count(' ')
-
-                    # To get the end position of the last word of the matched NP span,
-                    # we just need to count the number of spaces before the end character
-                    end = sent[:end_ch_idx].count(' ') + 1  # end position of the NP span, excluded
-                    res_spans.append((start, end, span))
-
-        return res_spans
 
     @staticmethod
     def _eval_span_quality(dataset, split=None):
@@ -313,9 +275,9 @@ class Processor(Label):
             # init the spacy spans from Np subtrees
             # We initiate the start character index and end character index with -1.
             spa_subtrees_spans = [(-1, -1, ' '.join(subtree)) for subtree in spa_subtrees]
-            spacy_result += self._convert_ch_position(sent, spa_subtrees_spans)
+            spacy_result += fu.convert_ch_position(sent, spa_subtrees_spans)
             tmp_sent = ' '.join(spa_cons_tree.flatten()[:])  # get the sentence from the constituency parse tree
-            spacy_result += self._convert_ch_position(tmp_sent, spa_subtrees_spans)
+            spacy_result += fu.convert_ch_position(tmp_sent, spa_subtrees_spans)
 
             # 2.3. Select the union of two parsers' recognition results
             # convert start/end index to string, to be consistent with the format of spans. This operation ensures

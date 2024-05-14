@@ -4,22 +4,15 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/anno_res  # cache directory
 eval_dir: data/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
-new_prompt: False  # whether to generate chat message using the new prompt to extract entity directly by annotators
+new_prompt: True  # whether to generate chat message using the new prompt to extract entity directly by annotators
 
 prompt_template: >-
   {system_role}
-  Here is your task:
-  ### Task
-  {task_prompt}
   
-  Here are types and their descriptions:
+  Here are entity types and their descriptions:
   ### Types
   {types_prompt}
-  
-  In your annotation process, please follow these guidelines:
-  ### Guidelines
-  {guidelines}
-  
+    
   Here are some examples to help you understand the task better:
   ### Examples
   {examples}
@@ -27,76 +20,8 @@ prompt_template: >-
   ### Query
   {query}
 
-# for chat model using chat template
-prompt_template_chat: >-
-  {system_role}
-  Here is your task:
-  ### Task
-  {task_prompt}
-  
-  Here are types and their descriptions:
-  ### Types
-  {types_prompt}
-  
-  In your annotation process, please follow these guidelines:
-  ### Guidelines
-  {guidelines}
-
 system_role: >-
-  You are a professional and helpful crowdsourcing data annotator using English with the help of description of types and guidelines.
-
-task_prompt: >-
-  You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']'), 
-  where '[' refers to the start of the entity mention and ']' refers to the end of the entity mention.
-  First, you need to determine if the mention is a special named entity instead of a common noun phrase.
-  Then, you should annotate the given entity mention using the provided types.
-  If there is no suitable type, you can choose 'O' as answer.
-  The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
-
-guidelines: >-
-  1) you should mark the full name for name categories.
-  2) you should only mark proper names, not nominals.
-  3) If a common noun is modified by a proper PreMod, you should mark only the PreMod, and categorize it based on its own meaning.
-  For example, "Clinton" is marked as PER in "the [Clinton] administration". "Supreme Court" is marked as ORG in "a [Supreme Court] ruling".
-  4) For categories dealing with numbers, you should mark the full expression, including modifiers. For examples, in "[Just 30%] of those polled favor the proposal",
-  you should mark "Just 30%" as PERCENT not "30%". In "[Almost 700] people attended the conference", you should mark "Almost 700" as CARDINAL not "700".
-  5) Do NOT include determiners or articles in the extent. For example, for "the White House" and "the US," mark only "White House" and "US" as ORG and GPE, respectively.
-  6) pronouns and pronominal elements like anaphoric "one," "someone," "everyone," "others," etc. should NOT be marked. They are 'O' type.
-  7) You should not mark names embedded in atomic names. For example, Mark "Bank of America" as ORG, but do not mark "America".
-  8) Occupational titles and honorifics should NOT be included in extent of PERSON entities. For "President Bush" and "Mr. Bush," mark only "Bush" as PER.
-  9) you cannot mark the contact Information like "cnn.com," "1600 Pennsylvania Ave," or "1-800-555-1234" as named entities.
-  10 you should know that your output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
-  
-  There are some confusing entity categories:
-  1) GPE vs LOC: Most named places are GPEs (Geo-Political Entities). Locations lack governmental structure (Geo, but not Political). 
-  For example, a country is a GPE, but a continent or a region is a LOC. A city is a GPE, but a neighborhood is a LOC 
-  2) NORP vs GPE/ORG: NORP is generally adjectival. Countries are GPEs, but Nationalities are NORPs. Religions, political parties, 
-  and other named groups are ORGs, but their members are NORP. For example, "Democrats" in "The [Democrats] have yet to choose a nominee" is NORP.
-  "Democratic Party" in "The [Democratic Party] has yet to choose a nominee" is ORG. This can be especially ambiguous with groups named "The __s"
-  For example, "Marines" in "He always dreamed of joining the [Marines]" is ORG,  while, "Marines" in "The [Marines] completed their mission and returned to their base" is NORP.
-  3) NORP vs LANGUAGE: Often, the adjectival form of a nationality is identical to the name of that country or people's language. 
-  you should use context to determine which tag is appropriate. For example, "the [French] language" is LANGUAGE, but "the [French] people" is NORP.
-  4) DATE vs TIME: Mentions longer than or equal to 24 hours should be marked DATE.
-  5) ORG vs FAC: If a building houses an organization of the same name, mentions should be marked ORG, 
-  unless clearly referring to the physical building alone in a locative way.
-  6) FAC vs LOC: Facilities are man-made, Locations are natural. For example, A canal is a FAC, but a river is a LOC. A farm is a FAC, but a forest is a LOC.
-  7) ORG vs WORK OF ART: Television broadcast companies are ORGs. Television programs can be ORGs or WORK OF ART, depending on context.
-  For example, "[60 Minutes] tried to contact him for an interview" = ORG, but "He was watching [60 Minutes]" = WORK OF ART.
-  Specific episodes or segments of television programs are WORK OF ART.
-  8) ORG vs PRODUCT: Makes, models, and versions are PRODUCTS; the company that produces them is ORG. 
-  For example, "Mustang" is a PRODUCT, but "Ford" is an ORG. "Pepsi" is a PRODUCT, but "Pepsi Co." is an ORG.
-  If an organization produces a product of the same name, annotators should use context to determine whether a mention should be marked ORG or PRODUCT
-  9) EVENT vs DATE/LOC/FAC/ORG: It is possible to refer to an Event using the Date when it occurred, the Location, or 
-  Facility where it occurred, or the Organization(s) involved. These mentions should be marked EVENT if the context makes 
-  it clear that the intended referent is the Event itself. For example, "After [Columbine], many schools installed metal detectors" = EVENT,
-  but "[Columbine High School] was the site of a deadly shooting" = FAC.
-  10) CARDINAL vs QUANTITY/MONEY/PERCENT: Quantites, Money, and Percents MUST have explicitly-mentioned units, otherwise 
-  they should be marked CARDINAL (even the implicit unit seems obvious). For example, "She wanted [a hundred percent] <PERCENT>, but he only gave her [fifty] <CARDINAL>".
-  "She wanted [a hundred dollars] <MONEY>, but he only gave her [twenty] <CARDINAL>". "She wanted [a hundred gallons] <QUANTITY>, but he only gave her [13] <CARDINAL>".
-  11) CARDINAL vs DATE/TIME: Dates and Times MUST have explicitly-mentioned units of time, otherwise they should be marked 
-  CARDINAL (even if the implicit unit seems obvious). For example, "She wanted to stay for [two weeks] <DATE>, but had to leave after [one] <CARDINAL>".
-  "She wanted to stay for [two hours] <TIME>, but had to leave after [one] <CARDINAL>".
-
+  You are a professional and helpful crowdsourcing entity annotator using English with the help of description of types.
 types_prompt: >-
   1) PERSON
   PERSON indicates "Person Name". These are proper names of people, including fictional people, first names, last names, 
@@ -237,47 +162,94 @@ types_prompt: >-
   "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
 
 instance_template: >-
+  task: You are about to read a sentence. Your task is to identify all '{label}' named entities in the sentence.
+  Your output should be a sentence with the entity mention marked with the "@@" and "##" symbols, where "@@" marks the 
+  start of the entity and "##" marks the end of the entity.
+  If there is no suitable entity mention in the sentence, you just only repeat the sentence.
   sentence: "{sentence}"
   output: {output}
 
 examples:
-  -
-    sentence: "While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'his plots' is just a common noun phrase. There is no suitable type for it. So, I should annotate it as 'O'",
-        "answer": "O"
-        }}
-  -
-    sentence: "The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a special named entity which is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
-        "answer": "FAC"
-        }}
-  -
-    sentence: "Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is a special named entity which is a date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
-        "answer": "DATE"
-        }}
-  -
-    sentence: "[ American ] Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'American' is a special named entity which is an adjectival forms of adjectival forms of a nationality ('NORP'). So I should annotate it as 'NORP'",
-        "answer": "NORP"
-        }}
-  -
-    sentence: "Among the most famous is the [ Battle of Hulao Pass] , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'Battle of Hulao Pass' is a special named entity which is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. So I should annotate it as 'EVENT'",
-        "answer": "EVENT"
-        }}
-    
-    
+  - label: PERSON
+    sentence: "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
+    output: "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
+
+  - label: DATE
+    sentence: "Rogers played hist first match on February 19 , 2004 against Jamaica , in Nain ."
+    output: "Rogers played hist first match on @@ February 19 , 2004 ## against Jamaica , in Nain ."
+
+  - label: EVENT
+    sentence: "Among the most famous is the Battle of Hulao Pass , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
+    output: "Among the most famous is the @@ Battle of Hulao Pass ## , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
+
+  - label: CARDINAL
+    sentence: "One state environmental regulator returned a report because `` it was n't heavy enough , it could n't have been correct , '' Mr. Maguire says ."
+    output: "@@ One ## state environmental regulator returned a report because `` it was n't heavy enough , it could n't have been correct , '' Mr. Maguire says ."
+
+  - label: PERSON
+    sentence: "Thus , optimistic entrepreneurs await a promised land of less red tape -- just as soon as Uncle Sam gets around to arranging it ."
+    output: "Thus , optimistic entrepreneurs await a promised land of less red tape -- just as soon as @@ Uncle Sam ## gets around to arranging it ."
+
+  - label: NORP
+    sentence: "American Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
+    output: "@@ American ## Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
+
+  - label: GPE
+    sentence: "The Tokyo maker of ceramic capacitors said it purchased a plant in Plymouth ."
+    output: "The @@ Tokyo ## maker of ceramic capacitors said it purchased a plant in @@ Plymouth ##."
+
+  - label: LAW
+    sentence: "The U.S. - Japan Security Treaty can continue , sort of ."
+    output: "@@ The U.S. - Japan Security Treaty ## can continue , sort of ."
+
+  - label: ORG
+    sentence: "The LDP won by a landslide in the last election , in July 1986 ."
+    output: "The @@ LDP ## won by a landslide in the last election , in July 1986 ."
+
+  - label: PERCENT
+    sentence: "A recent example is the 3 % consumption tax on all commercial activities ."
+    output: "A recent example is the @@ 3 % ## consumption tax on all commercial activities ."
+
+  - label: ORDINAL
+    sentence: "On second thought , make that just mom ."
+    output: "On @@ second ## thought , make that just mom ."
+
+  - label: MONEY
+    sentence: "`` But I 'm going to lose $ 50,000 to $ 60,000 on it ."
+    output: "`` But I 'm going to lose @@ $ 50,000 to $ 60,000 ## on it ."
+
+  - label: WORK_OF_ART
+    sentence: "But James Madison refuted that argument in one of the most celebrated political treatises ever written , No. 10 of the Federalist Papers ."
+    output: "But James Madison refuted that argument in one of the most celebrated political treatises ever written , @@ No. 10 ## of @@ the Federalist Papers ## ."
+
+  - label: FAC
+    sentence: "The station is the rebuilt Dundee Tay Bridge railway station , which had been built by the North British Railway ."
+    output: "The station is the rebuilt @@ Dundee Tay Bridge railway station ## , which had been built by the @@ North British Railway ## ."
+
+  - label: TIME
+    sentence: "On this morning , he does n't sell much in Radzymin , either ."
+    output: "On @@ this morning ## , he does n't sell much in Radzymin , either ."
+
+  - label: LOC
+    sentence: "The tribe is one of the poorest in the Pacific Northwest ."
+    output: "The tribe is one of the poorest in @@ the Pacific Northwest ##."
+
+  - label: QUANTITY
+    sentence: "Daily output is expected to decline by at least another 500,000 barrels next year ."
+    output: "Daily output is expected to decline by @@ at least another 500,000 barrels ## next year ."
+
+  - label: PRODUCT
+    sentence: "Coca - Cola Co. yesterday said singer Elton John signed to appear in an ad for Diet Coke ."
+    output: "Coca - Cola Co. yesterday said singer Elton John signed to appear in an ad for @@ Diet Coke ##."
+
+  - label: LANGUAGE
+    sentence: "`` I got to get back to school and straighten out my English . ''"
+    output: "`` I got to get back to school and straighten out my @@ English ## . ''"
+
+  - label: EVENT
+    sentence: "It does n't pay a dividend , and this trust needs income ."
+    output: "It does n't pay a dividend , and this trust needs income ."
+
 
 
 annotators: # choose annotating model from your cfgs below.
@@ -288,12 +260,12 @@ annotators: # choose annotating model from your cfgs below.
 #    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
 #   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
 #   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
-#   anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
+#   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
 #   repetition_penalty: 1  # set to 1 to avoid repetition penalty
 #   anno_bs: 40  # batch size for this model
 #   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
 #   gpu_memory_utilization: 0.8
-
+#
 #  -
 #   name: Mistral
 #   chat: False
@@ -308,18 +280,18 @@ annotators: # choose annotating model from your cfgs below.
 #   gpu_memory_utilization: 0.8
 
   -
-   name: Qwen-gd
-   chat: False
-   # https://huggingface.co/Qwen/Qwen1.5-32B-Chat
-   checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
-   # qwen has system prompt. We can input the examples in a form of chatting
-   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-   anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
-   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-   anno_bs: 50  # batch size for this model
-   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-   gpu_memory_utilization: 0.9
+    name: Qwen-pt-20
+    chat: False
+    checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
+    # qwen has system prompt. We can input the examples in a form of chatting
+    # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
+    anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
+    anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
+    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
+    repetition_penalty: 1  # set to 1 to avoid repetition penalty
+    anno_bs: 50  # batch size for this model
+    dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+    gpu_memory_utilization: 0.9
 
 #  -
 #   name: AquilaChat2  # good

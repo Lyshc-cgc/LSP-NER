@@ -4,6 +4,7 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/anno_res  # cache directory
 eval_dir: data/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
+new_prompt: False  # whether to generate chat message using the new prompt to extract entity directly by annotators
 
 prompt_template: >-
   {system_role}
@@ -38,7 +39,7 @@ system_role: >-
 
 task_prompt: >-
   You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']'), 
-  where '[' refers to the start of the entity mention and ']' reffers to the end of the entity mention.
+  where '[' refers to the start of the entity mention and ']' refers to the end of the entity mention.
   First, you need to determine if the mention is a special named entity instead of a common noun phrase.
   Then, you should annotate the given entity mention using the provided types.
   If there is no suitable type, you can choose 'O' as answer.
@@ -310,18 +311,18 @@ examples:
         }}
 
 annotators: # choose annotating model from your cfgs below.
-#  -
-#   name: Yi  # good
-#   chat: False
-#   checkpoint: ckpt/01-ai/Yi-34B-Chat-8bits # https://huggingface.co/01-ai/Yi-34B-Chat-8bits
-#    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-#   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-#   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
-#   anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
-#   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-#   anno_bs: 40  # batch size for this model
-#   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-#   gpu_memory_utilization: 0.8
+  -
+   name: Yi–20  # good
+   chat: False
+   checkpoint: ckpt/01-ai/Yi-34B-Chat-8bits # https://huggingface.co/01-ai/Yi-34B-Chat-8bits
+    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
+   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
+   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
+   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
+   repetition_penalty: 1  # set to 1 to avoid repetition penalty
+   anno_bs: 50  # batch size for this model
+   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+   gpu_memory_utilization: 0.9
 
   -
     name: Qwen–20
