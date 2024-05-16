@@ -54,7 +54,7 @@ class Annotation(Label):
                 instance = self.config['instance_template'].format(sentence=example['sentence'], output=example['output'])
                 examples += f'{idx + 1})\n{instance}'
             query = self.config['instance_template'].format(sentence='{sentence}', output='')
-            if self.config['guidelines']:
+            if 'guidelines' in self.config.keys() and self.config['guidelines']:
                 usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
                                                                    task_prompt=self.config['task_prompt'],
                                                                    types_prompt=self.config['types_prompt'],
@@ -88,7 +88,7 @@ class Annotation(Label):
                                                                    output=example['output'])
                 examples += f'{idx + 1})\n{instance}\n'
             query = self.config['instance_template'].format(label='{label}', sentence='{sentence}', output='')
-            if self.config['guidelines']:
+            if 'guidelines' in self.config.keys() and self.config['guidelines']:
                 usr_prompt = self.config['prompt_template'].format(system_role=self.config['system_role'],
                                                                    types_prompt=self.config['types_prompt'],
                                                                    guidelines=self.config['guidelines'],
@@ -155,9 +155,22 @@ class Annotation(Label):
         if new_prompt:
             # new_prompt is True, we recognize all entity mention given the type
             pattern = r'@@(.*?)##'
-            results = re.finditer(pattern, output_text, re.DOTALL)
-            out_spans = [(-1, -1, res.group(1).strip()) for res in results]
-            out_spans = fu.convert_ch_position(output_text, out_spans)  # [(start_0, end_0, span_0),...]
+            matches = re.finditer(pattern, output_text, re.DOTALL)
+            out_spans = []
+            for match in matches:
+                start_ch_idx, end_ch_idx = match.span(1)  # get the capture group 1, ('span')
+                span = output_text[start_ch_idx:end_ch_idx].strip()  # clear the white space around the span
+
+                start_ch_idx, end_ch_idx = match.span(0)  # get the capture group 0, ('@@ span ##')
+                # To get the start position of the first word of the matched span in the original sentence,
+                # we just need to count the number of spaces before the start character ('@') in the output text
+                start = output_text[:start_ch_idx].count(' ')
+
+                # To get the end position of the last word of the matched span in the original sentence,
+                # we just need to count the number of spaces in the span
+                end = start + span.count(' ') + 1 # end position of the span, excluded
+                out_spans.append((str(start), str(end), span))
+
             return out_spans
         else:
             json_pattern = [r'\{\{(.*?)\}\}', r'\{(.*?)\}']  # the pattern to extract JSON string
@@ -190,10 +203,11 @@ class Annotation(Label):
 
         # 0. Some settings
         # 0.1 init wandb
-        wandb.init(
-            project='ontonotes5_annotation_by_llm',
-            config=anno_cfg
-        )
+        if self.config['gold_span']:
+            wandb.init(
+                project='ontonotes5_annotation_by_llm',
+                config=anno_cfg
+            )
 
         # 0.2 GPU setting
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # avoid parallelism in tokenizers
@@ -260,7 +274,7 @@ class Annotation(Label):
             # y_true stores the gold span and its label in a tuple, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
             y_true = []
             pred_spans = [] # store the predicted spans and its label
-
+            output_text = []  # store the output text for each instance
             for batch in pbar:
                 batch_spans, batch_labels, batch_chats = [], [], []  # store the span, the gold label ids / the gold spans, chat for each batch
                 batch_res_label_ids = []  # store the output label ids for each batch to evaluate
@@ -291,10 +305,11 @@ class Annotation(Label):
                 templated_batch_chats = anno_tokenizer.apply_chat_template(batch_chats, add_generation_prompt=True, tokenize=False)
                 outputs = anno_model.generate(templated_batch_chats, sampling_params)  # annotate
                 # for test
-                test_answer = []
-                for output in outputs:
-                    test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
+                # test_answer = []
+                # for output in outputs:
+                #     test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
                 for out_idx, output in enumerate(outputs):
+                    output_text.append(output.outputs[0].text)
                     if self.config['new_prompt']:
                         out_spans = self._process_output_text(output.outputs[0].text, new_prompt=self.config['new_prompt'])
                         if len(out_spans) == 0:
@@ -329,16 +344,18 @@ class Annotation(Label):
                                'accuracy & f1-micro': accuracy_score(y_true=batch_labels, y_pred=batch_res_label_ids),
                                'matthews_corrcoef': matthews_corrcoef(y_true=batch_labels, y_pred=batch_res_label_ids),
                                'cohen_kappa_score': cohen_kappa_score(y1=batch_labels, y2=batch_res_label_ids)
-                               })
+                                 })
 
             ray.shutdown()
 
             # 5. cache and evaluate the annotation result
+            res_output_text = [output_text]
             if self.config['gold_span']:
                 cache_result = {
                     "y_true": y_true,  # the ground truth label ids, shaped like [label_id_0, label_id_1, ...]
                     "labels": res_labels,  # the output labels, shaped like [label_0, label_1, ...]
-                    "label_ids": res_label_ids  # the output label ids, shaped like [label_id_0, label_id_1, ...]
+                    "label_ids": res_label_ids,  # the output label ids, shaped like [label_id_0, label_id_1, ...]
+                    "output_text": res_output_text
                 }
 
             else:
@@ -352,7 +369,8 @@ class Annotation(Label):
 
                 cache_result = {
                     "y_true": res_y_true,  # the gold span and its label, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
-                    "pred_spans": res_pred_spans
+                    "pred_spans": res_pred_spans,  # the predicted spans and its label, shaped like [(start, end, pred_mention_span, pred_label_id), ...]
+                    "output_text": res_output_text
                 }
 
             cache_result = Dataset.from_dict(cache_result)
@@ -393,7 +411,6 @@ class Annotation(Label):
                 quality_data.append(result['pred_spans'])
 
         # 2. evaluate the annotation quality
-        # todo, for the case that gold_span is False, we cannot evaluate directly the quality of the annotation. the results need to be transformed to the value format
         if quality:
             if self.config['gold_span']:
                 qual_res_file = os.path.join(self.config['eval_dir'], 'gold_span', 'quality_res.txt')

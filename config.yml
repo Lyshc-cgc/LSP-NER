@@ -1,2 +1,5 @@
 data_cfg: cfgs/data_cfg.yml
-anno_cfg: cfgs/anno_cfg_pt.yml
+anno_cfg:
+  - cfgs/anno_cfg_pt_gd_20.yml
+  - cfgs/anno_cfg_pt_20.yml
+  - cfgs/anno_cfg_pt.yml
