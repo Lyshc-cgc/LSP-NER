@@ -4,7 +4,6 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/anno_res  # cache directory
 eval_dir: data/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
-new_prompt: False  # whether to generate chat message using the new prompt to extract entity directly by annotators
 
 prompt_template: >-
   {system_role}
@@ -21,7 +20,6 @@ prompt_template: >-
   {examples}
   
   ### Query
-  {query}
 
 # for chat model using chat template
 prompt_template_chat: >-
@@ -229,18 +227,18 @@ examples:
 
 
 annotators: # choose annotating model from your cfgs below.
-  -
-   name: Yi  # good
-   chat: False
-   checkpoint: ckpt/01-ai/Yi-34B-Chat-8bits # https://huggingface.co/01-ai/Yi-34B-Chat-8bits
-    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
-   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
-   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-   anno_bs: 50  # batch size for this model
-   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-   gpu_memory_utilization: 0.9
+#  -
+#   name: Yi  # good
+#   chat: False
+#   checkpoint: ckpt/01-ai/Yi-34B-Chat-8bits # https://huggingface.co/01-ai/Yi-34B-Chat-8bits
+#    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
+#   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
+#   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
+#   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
+#   repetition_penalty: 1  # set to 1 to avoid repetition penalty
+#   anno_bs: 50  # batch size for this model
+#   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+#   gpu_memory_utilization: 0.9
 
 #  -
 #   name: Mistral
@@ -258,15 +256,15 @@ annotators: # choose annotating model from your cfgs below.
   -
     name: Qwen
     chat: False
-    checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
+    checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat  # your path to the model checkpoint
     # qwen has system prompt. We can input the examples in a form of chatting
     # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
     anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
     anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
+    anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty
-    anno_bs: 50  # batch size for this model
-    dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+    anno_bs: 60  # batch size for this model
+    dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
     gpu_memory_utilization: 0.9
 
 #  -

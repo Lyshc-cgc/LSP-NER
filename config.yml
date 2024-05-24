@@ -1,5 +1,16 @@
 data_cfg: cfgs/data_cfg.yml
-anno_cfg:
-  - cfgs/anno_cfg_pt_gd_20.yml
-  - cfgs/anno_cfg_pt_20.yml
-  - cfgs/anno_cfg_pt.yml
+anno_cfgs:
+  raw_prompt:  # LLM classify the given entities
+    - cfgs/anno_cfg.yml
+    - cfgs/anno_cfg_20.yml
+    - cfgs/anno_cfg_gd_20.yml
+  single_type_prompt:  # LLM recognize entities given single type
+    - cfgs/anno_cfg_st_gd_20.yml
+    - cfgs/anno_cfg_st_20.yml
+    - cfgs/anno_cfg_st.yml
+  multi_type_prompt:  # LLM recognize all types of entities including 'O' types, using a chain of thought.
+    - cfgs/anno_cfg_mt_gd_20.yml
+    - cfgs/anno_cfg_mt_20.yml
+    - cfgs/anno_cfg_mt.yml
+  few_shot_prompt:
+    - cfgs/anno_cfg_fs.yml

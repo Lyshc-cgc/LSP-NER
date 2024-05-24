@@ -9,7 +9,9 @@ def main():
     formated_dataset = proc.process()
 
     # 2. annotate the data by LLMs
-    for anno_cfg in config['anno_cfg']:
+    prompt_type = 'few_shot_prompt'
+    assert prompt_type in ('raw_prompt', 'single_type_prompt', 'multi_type_prompt', 'few_shot_prompt')
+    for anno_cfg in config['anno_cfgs'][prompt_type]:
         anno = Annotation(anno_cfg)
         anno.annotate_by_all(formated_dataset, quality=False)
 

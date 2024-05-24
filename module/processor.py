@@ -1,6 +1,9 @@
 import os
 import re
 import copy
+import random
+
+import jsonlines
 import multiprocess
 import module.func_util as fu
 from datasets import load_dataset, load_from_disk
@@ -358,25 +361,131 @@ class Processor(Label):
             'expand_spans_labels': res_ex_spans_labels,   # store the expanded gold spans and labels, shape like (start, end, expanded_gold_mention_span, expanded_gold_label_id)
             'spa_cons_string': res_spa_cons_string,  # constituency parse tree of the instances, predicted by the spaCy parser
         }
+    def statistics(self, dataset):
+        """
+        Get the statistics of the dataset.
+        :param dataset: the dataset to be analyzed.
+        :return: the statistics of the dataset.
+        """
+        # get the statistics of the dataset
+        # check the cached
+        # 1.1 get the entity number of each label
+
+        label_nums = dict()
+        for instance in dataset:
+            for spans_label in instance['spans_labels']:
+                # shape like (start, end, gold_mention_span, gold_label_id)
+                label_id = int(spans_label[-1])
+                label = self.id2label[label_id]
+                if label not in label_nums.keys():
+                    label_nums[label] = 0
+                label_nums[label] += 1
+
+        return {
+            'label_nums': label_nums,
+        }
+
+    def support_set_sampling(self, dataset, k_shot=1, sample_split='train'):
+        """
+        Sample k-shot support set from the dataset split.
+        The sampled support set contains at least K examples for each of the labels.
+        Refer to in the Support Set Sampling Algorithm in the Appendix B (P12) of the paper https://arxiv.org/abs/2203.08985
+        or in the Algorithm 1 in the A.2 (P14) of the paper https://arxiv.org/abs/2303.08559
+
+        :param dataset: The dataset to be sampled.
+        :param k_shot: The shot number of the support set.
+        :param sample_split: The dataset split you want to sample from.
+        :return: the support set containing k-shot index of examples for each of the labels.
+        """
+        def _update_counter(support_set, raw_counter):
+            """
+            Update the number for each label in the support set.
+            :param support_set: the support_set
+            :param raw_counter: the counter to record the number of entities for each label in the support set
+            :return:
+            """
+            counter = {label: 0 for label in raw_counter.keys()}
+            for idx in support_set:
+                for spans_label in dataset['spans_labels'][idx]:
+                    # spans_label shapes like (start, end, gold_mention_span, gold_label)
+                    label_id = int(spans_label[-1])
+                    label = self.id2label[label_id]
+                    counter[label] += 1
+            return counter
+
+        # 1. init
+        if sample_split not in dataset.keys():
+            dataset = dataset['train']
+        else:
+            dataset = dataset[sample_split]
+
+        label_nums = self.statistics(dataset)['label_nums']  # count the number of entities for each label
+        label_nums = dict(sorted(label_nums.items(), key=lambda x: x[1], reverse=False))  # sort the labels by the number of entities by ascending order
+
+        # add functional columns
+        dataset = dataset.map(lambda example, index: {"id": index}, with_indices=True)  # add index column
+        # add new_tags column
+        # original tags is BIO schema, we convert it to the new tags schema where the 'O' tag is 0, 'B-DATE' and 'I-DATE' are the same tag, etc.
+        dataset = dataset.map(lambda example: {"new_tags": [self.covert_tag2id[tag] for tag in example['tags']]})
+
+        support_set = set()  # the support set
+        counter = {label: 0 for label in label_nums.keys()}  # counter to record the number of entities for each label in the support set
+
+        # init the candidate instances indices for each label
+        candidate_idx = dict()
+
+        for label in label_nums.keys():
+            # for 'O' label, we choose those instance containing spans parsed by parsers without any golden entity spans,
+            # i.e., len(dataset[idx]['spans']) > 0 and len(dataset[idx]['spans_labels']) <= 0
+            # tmp_ins = dataset.filter(lambda x: len(x['spans']) > 0 >= len(x['spans_labels']))['id']
+
+            # filter out the instances without any golden entity spans
+            label_id = self.label2id[label]
+            tmp_ins = dataset.filter(lambda x: label_id in x['new_tags'] and len(x['spans_labels']) > 0)['id']
+            candidate_idx.update({label: tmp_ins})
+
+        # 2. sample
+        print(f"Sampling {k_shot}-shot support set from {sample_split} split...")
+        for label in label_nums.keys():
+            while counter[label] < k_shot:
+                idx = random.choice(candidate_idx[label])
+                support_set.add(idx)
+                candidate_idx[label].remove(idx)
+                counter = _update_counter(support_set, counter)
+                print(f'support set statistic: {counter}')
+
+        # 3. remove redundant instance
+        raw_support_set = copy.deepcopy(support_set)
+        for idx in raw_support_set:
+            tmp_support_set = copy.deepcopy(support_set)  # cache before removing instance idx
+            support_set.remove(idx)
+            counter = _update_counter(support_set, counter)
+            # if we remove instance idx, leading to the number of entities for any label in the support set is less than k_shot
+            # we should add instance idx back to the support set
+            if len(list(filter(lambda e: e[1] < k_shot, counter.items()))) != 0:
+                support_set = tmp_support_set
+
+        counter = _update_counter(support_set, counter)
+        return support_set, counter
 
     def process(self):
         # 0. init config
         if self.config['gold_span']:
-            save_dir = os.path.join(self.config['save_dir'], 'gold_span')
+            preprocessed_dir = os.path.join(self.config['preprocessed_dir'], 'gold_span')  # the directory to store the formatted dataset
             process_func = self.data_format_gold
             with_rank = False
-            continue_dir = os.path.join(self.config['continue_dir'], 'gold_span')
+            continue_dir = os.path.join(self.config['continue_dir'], 'gold_span')  # the directory to store the continued data to be annotated
+            ss_cache_dir = os.path.join(self.config['ss_cache_dir'], 'gold_span')  # the directory to cache the support set
         else:
-            save_dir = os.path.join(self.config['save_dir'], 'span')
+            preprocessed_dir = os.path.join(self.config['preprocessed_dir'], 'span')
             process_func = self.data_format_span
             # with_rank is used to determine whether to assign a value to the rank parameter in the map function
             # we use rank number to specify the GPU device to be used by spaCy in the different processing
             with_rank = True
             # batch_size = self.config['batch_num_per_device'] * self.config['batch_size_per_device']
-            continue_dir = os.path.join(self.config['continue_dir'], 'span')
-            quality_res_dir = os.path.join(self.config['eval_dir'], 'span')
-            if not os.path.exists(quality_res_dir):
-                os.makedirs(quality_res_dir)
+            continue_dir = os.path.join(self.config['continue_dir'], 'span')  # the directory to store the continued data to be annotated
+            quality_res_dir = os.path.join(self.config['eval_dir'], 'span')  # the directory to store the quality evaluation results
+            ss_cache_dir = os.path.join(self.config['ss_cache_dir'], 'span')  # the directory to cache the support set
 
         # set 'spawn' start method in the main process to parallelize computation across several GPUs when using multi-processes in the map function
         # refer to https://huggingface.co/docs/datasets/process#map
@@ -384,31 +493,73 @@ class Processor(Label):
 
         # 1. check and load the cached formatted dataset
         try:
-            formated_dataset = load_from_disk(save_dir)
+            preprocessed_dataset = load_from_disk(preprocessed_dir)
         except FileNotFoundError:
             # 2. format datasets to get span from scratch
             raw_dataset = load_dataset(self.config['data_path'], num_proc=self.config['num_proc'])
-            formated_dataset = raw_dataset.map(process_func,
+            preprocessed_dataset = raw_dataset.map(process_func,
                                                batched=True,
                                                batch_size=self.config['batch_size'],
                                                num_proc=self.num_proc,
                                                with_rank=with_rank)
 
-            os.makedirs(self.config['save_dir'], exist_ok=True)
-            formated_dataset.save_to_disk(save_dir)
+            os.makedirs(self.config['preprocessed_dir'], exist_ok=True)
+            preprocessed_dataset.save_to_disk(preprocessed_dir)
 
-        # 3. if the self.config['gold_span'] is False, we get span from scratch by spaCy
+        # 3. sample the support set
+        if self.config['support_set']:
+            if not os.path.exists(ss_cache_dir):
+                os.makedirs(ss_cache_dir)
+
+            cache_ss_file_name = '{}_support_set_{}_shot.jsonl'.format(self.config['sample_split'], self.config['k_shot'])
+            cache_counter_file_name = '{}_counter_{}_shot.txt'.format(self.config['sample_split'], self.config['k_shot'])
+            support_set_file = os.path.join(ss_cache_dir, cache_ss_file_name)
+            counter_file = os.path.join(ss_cache_dir, cache_counter_file_name)
+            # 3.1 check and load the cache
+            if os.path.exists(support_set_file):
+                support_set = set()
+                with jsonlines.open(support_set_file, mode='r') as reader:
+                    for item in reader:
+                        support_set.add(item['id'])
+            if os.path.exists(counter_file):
+                counter = dict()
+                with open(counter_file, 'r') as reader:
+                    for line in reader:
+                        label, num = line.strip().split(':')
+                        counter[label] = int(num)
+
+            # 3.2 sample support set from scratch
+            else:
+                support_set, counter = self.support_set_sampling(preprocessed_dataset, self.config['k_shot'], self.config['sample_split'])
+                # cache the support set
+                with jsonlines.open(support_set_file, mode='w') as writer:
+                    for idx in support_set:
+                        tokens = preprocessed_dataset[self.config['sample_split']]['tokens'][idx]
+                        tags = preprocessed_dataset[self.config['sample_split']]['tags'][idx]
+                        spans = preprocessed_dataset[self.config['sample_split']]['spans'][idx]
+                        spans_labels = preprocessed_dataset[self.config['sample_split']]['spans_labels'][idx]
+                        writer.write({'id': idx, 'tokens': tokens, 'tags': tags, 'spans': spans, 'spans_labels': spans_labels})
+
+                # cache the counter
+                with open(counter_file, 'w') as writer:
+                    for k, v in counter.items():
+                        writer.write(f'{k}: {v}\n')
+
+        # 4. if the self.config['gold_span'] is False, we get span from scratch by spaCy
         # we need to evaluate spans quality the formatted dataset
         if self.config['eval_quality']:
-            quality_res = self._eval_span_quality(formated_dataset)
+            if not os.path.exists(quality_res_dir):
+                os.makedirs(quality_res_dir)
+
+            quality_res = self._eval_span_quality(preprocessed_dataset)
             quality_res_file = os.path.join(quality_res_dir, 'quality_res.txt')
             with open(quality_res_file, 'w') as f:
                 for metric, res in quality_res.items():
                     f.write(f'{metric}: {res}\n')
             print(f"Span quality: {quality_res}")
 
-        # 4. select, shuffle, split and then save the formatted dataset
-        # 4.1 check the cached result
+        # 5. select, shuffle, split and then save the formatted dataset
+        # 5.1 check the cached result
         if self.config['continue']:
             try:
                 dataset = load_from_disk(continue_dir)
@@ -416,16 +567,17 @@ class Processor(Label):
             except FileNotFoundError:
                 dataset = None
 
-        # 4.2 get the specific split of the formatted dataset
+        # 5.2 get the specific split of the formatted dataset
         if self.config['split'] is not None:
-            dataset = formated_dataset[self.config['split']]
+            dataset = preprocessed_dataset[self.config['split']]
 
-        # 4.3 shuffle the formatted dataset
+        # 5.3 shuffle the formatted dataset
         if self.config['shuffle']:
             dataset = dataset.shuffle()
 
-        # 4.4 select the specific number of instances
+        # 5.4 select the specific number of instances
         if self.config['select']:
             dataset = dataset.select(range(self.config['select']))
         dataset.save_to_disk(continue_dir)
+
         return dataset
