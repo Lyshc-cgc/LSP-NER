@@ -1,49 +1,26 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
 
 cuda_devices: all  # use all available GPUs
-cache_dir: data/anno_res  # cache directory
-eval_dir: data/eval  # evaluation results file dir
+cache_dir: data/ontonotes/anno_res  # cache directory
+eval_dir: data/ontonotes/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
-k_shot_file: data/support_set/span/train_support_set_1_shot.jsonl  # k-shot examples to show to the annotator
-k_shot: 5  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
+multi_type_prompt: True  # whether to generate chat message using the multi type prompt to extract all types of entities directly by annotators
 
 prompt_template: >-
   {system_role}
-  Here is your task:
-  ### Task
-  {task_prompt}
-  
-  Here are types and their descriptions:
+
+  Here are entity types and their descriptions:
   ### Types
   {types_prompt}
-
+    
   Here are some examples to help you understand the task better:
   ### Examples
   {examples}
   
   ### Query
 
-# for chat model using chat template
-prompt_template_chat: >-
-  {system_role}
-  Here is your task:
-  ### Task
-  {task_prompt}
-  
-  Here are types and their descriptions:
-  ### Types
-  {types_prompt}
-
 system_role: >-
-  You are a professional and helpful crowdsourcing data annotator using English with the help of description of types.
-
-task_prompt: >-
-  You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']'), 
-  where '[' refers to the start of the entity mention and ']' refers to the end of the entity mention.
-  First, you need to determine if the mention is a special named entity instead of a common noun phrase.
-  Then, you should annotate the given entity mention using the provided types.
-  If there is no suitable type, you can choose 'O' as answer.
-  The output should be a JSON string in the format of '{{"answer": "your answer"}}'.
+  You are a professional and helpful crowdsourcing entity annotator using English with the help of description of types.
 
 types_prompt: >-
   1) PERSON
@@ -185,8 +162,34 @@ types_prompt: >-
   "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
 
 instance_template: >-
+  task: You are about to read a sentence. Your task is to identify all types of named entities in the sentence.
+  Your output should be a string wrapped in curly braces.
+  The string is in a form of "{the first entity type, the first entity mention | the second entity type, the second entity mention|... }".
+  If there is no suitable entity mention in the sentence, you just only output "None".
+  Candidate types: PERSON, NORP, FAC, ORG, GPE, LOC, PRODUCT, DATE, TIME, PERCENT, MONEY, QUANTITY, ORDINAL, CARDINAL, EVENT, WORK_OF_ART, LAW, LANGUAGE.
   sentence: "{sentence}"
   output: {output}
+
+examples:
+  - label: PERSON
+    sentence: "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
+    output: "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
+
+  - label: FAC
+    sentence: "The station is the rebuilt Dundee Tay Bridge railway station , which had been built by the North British Railway ."
+    output: "The station is the rebuilt @@ Dundee Tay Bridge railway station ## , which had been built by the @@ North British Railway ## ."
+
+  - label: DATE
+    sentence: "Rogers played hist first match on February 19 , 2004 against Jamaica , in Nain ."
+    output: "Rogers played hist first match on @@ February 19 , 2004 ## against Jamaica , in Nain ."
+
+  - label: NORP
+    sentence: "American Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
+    output: "@@ American ## Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
+
+  - label: EVENT
+    sentence: "Among the most famous is the Battle of Hulao Pass , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
+    output: "Among the most famous is the @@ Battle of Hulao Pass ## , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
 
 annotators: # choose annotating model from your cfgs below.
 #  -
@@ -198,10 +201,10 @@ annotators: # choose annotating model from your cfgs below.
 #   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
 #   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
 #   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-#   anno_bs: 50  # batch size for this model
+#   anno_bs: 40  # batch size for this model
 #   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-#   gpu_memory_utilization: 0.9
-
+#   gpu_memory_utilization: 0.8
+#
 #  -
 #   name: Mistral
 #   chat: False
@@ -216,17 +219,18 @@ annotators: # choose annotating model from your cfgs below.
 #   gpu_memory_utilization: 0.8
 
   -
-    name: Qwen-1-shot-w-o
+    name: Qwen-st
     chat: False
     checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
-    # https://huggingface.co/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4#quickstart
+    # qwen has system prompt. We can input the examples in a form of chatting
+    # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
     anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
     anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-    anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
+    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty
-    anno_bs: 20  # batch size for this model
-    dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-    gpu_memory_utilization: 0.8
+    anno_bs: 60  # batch size for this model
+    dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+    gpu_memory_utilization: 0.9
 
 #  -
 #   name: AquilaChat2  # good

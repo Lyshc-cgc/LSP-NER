@@ -7,6 +7,7 @@ import os
 import jsonlines
 import wandb
 import torch
+from openai import OpenAI
 import numpy as np
 from datasets import load_from_disk, Dataset
 from tqdm import tqdm
@@ -20,8 +21,8 @@ class Annotation(Label):
     """
     def __init__(self, anno_cfg):
         super().__init__()
-        self.config = fu.get_config(anno_cfg)
-        self.annotators_cfg = self.config['annotators']
+        self.anno_config = fu.get_config(anno_cfg)
+        self.annotators_cfg = self.anno_config['annotators']
         self.annotator_ids = dict()
         for idx, anno_cfg in enumerate(self.annotators_cfg):
             self.annotator_ids[anno_cfg['name']] = idx
@@ -33,16 +34,16 @@ class Annotation(Label):
         :return:
         """
         kwargs = {'examples': examples}
-        if 'system_role' in self.config.keys() and self.config['system_role']:
-            kwargs.update({'system_role': self.config['system_role']})
-        if 'task_prompt' in self.config.keys() and self.config['task_prompt']:
-            kwargs.update({'task_prompt': self.config['task_prompt']})
-        if 'types_prompt' in self.config.keys() and self.config['types_prompt']:
-            kwargs.update({'types_prompt': self.config['types_prompt']})
-        if 'guidelines' in self.config.keys() and self.config['guidelines']:
-            kwargs.update({'guidelines': self.config['guidelines']})
+        if 'system_role' in self.anno_config.keys() and self.anno_config['system_role']:
+            kwargs.update({'system_role': self.anno_config['system_role']})
+        if 'task_prompt' in self.anno_config.keys() and self.anno_config['task_prompt']:
+            kwargs.update({'task_prompt': self.anno_config['task_prompt']})
+        if 'types_prompt' in self.anno_config.keys() and self.anno_config['types_prompt']:
+            kwargs.update({'types_prompt': self.anno_config['types_prompt']})
+        if 'guidelines' in self.anno_config.keys() and self.anno_config['guidelines']:
+            kwargs.update({'guidelines': self.anno_config['guidelines']})
 
-        usr_prompt = self.config['prompt_template'].format(**kwargs)
+        usr_prompt = self.anno_config['prompt_template'].format(**kwargs)
         return usr_prompt
 
     def _init_chat_message(self, anno_cfg) -> list[None | dict[str, str]]:
@@ -56,8 +57,8 @@ class Annotation(Label):
             pass
         else:
             examples = ''
-            for idx, example in enumerate(self.config['examples']):
-                instance = self.config['instance_template'].format(sentence=example['sentence'], output=example['output'])
+            for idx, example in enumerate(self.anno_config['examples']):
+                instance = self.anno_config['instance_template'].format(sentence=example['sentence'], output=example['output'])
                 examples += f'{idx + 1})\n{instance}'
             usr_prompt = self._init_usr_prompt(examples)
             chat_message = [{"role": "user", "content": usr_prompt}]
@@ -74,8 +75,8 @@ class Annotation(Label):
             pass
         else:
             examples = ''
-            for idx, example in enumerate(self.config['examples']):
-                instance = self.config['instance_template'].format(label=example['label'],
+            for idx, example in enumerate(self.anno_config['examples']):
+                instance = self.anno_config['instance_template'].format(label=example['label'],
                                                                    sentence=example['sentence'],
                                                                    output=example['output'])
                 examples += f'{idx + 1})\n{instance}\n'
@@ -100,7 +101,13 @@ class Annotation(Label):
 
             index = 0  # index of the examples
             # 1. for Non-O class
-            with jsonlines.open(self.config['k_shot_file']) as reader:
+            # k-shot examples to show to the annotator
+            k_shot = self.anno_config['k_shot']
+            if self.anno_config['gold_span']:
+                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'gold_span', f'train_support_set_{k_shot}_shot.jsonl')
+            else:
+                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'span', f'train_support_set_{k_shot}_shot.jsonl')
+            with jsonlines.open(self.anno_config['']) as reader:
                 for line in reader:
                     span_nums.append(len(line['spans_labels']))
                     spans = set()  # store the spans parsed by parsers
@@ -113,7 +120,7 @@ class Annotation(Label):
 
                         label = self.id2label[int(label_id)]
                         output = f'{{"answer": "{label}"}}'
-                        instance = self.config['instance_template'].format(sentence=sentence, output=output)
+                        instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
                         examples += f'{index + 1})\n{instance}\n'
                         index += 1
 
@@ -128,18 +135,18 @@ class Annotation(Label):
             # the more gold spans, the less probability to be sampled
             softmin = torch.nn.Softmin(dim=0)
             probability = softmin(torch.tensor(span_nums, dtype=torch.float32))
-            sampled_idx = torch.topk(probability, k = 2*self.config['k_shot']).indices.tolist()  # the instance indices to be sampled
+            sampled_idx = torch.topk(probability, k = 2*self.anno_config['k_shot']).indices.tolist()  # the instance indices to be sampled
             # get the sampled spans of 'O' class and filter the empty spans
             sampled_idx = list(filter(lambda x: len(spans_o_class[x]) > 0, sampled_idx))
-            sampled_idx = sampled_idx[:self.config['k_shot']]  # Get the first k_shot elements
-            with jsonlines.open(self.config['k_shot_file']) as reader:
+            sampled_idx = sampled_idx[:self.anno_config['k_shot']]  # Get the first k_shot elements
+            with jsonlines.open(self.anno_config['k_shot_file']) as reader:
                 for idx, line in enumerate(reader):
                     if idx in sampled_idx:
                         start, end, entity_mention = random.choice(list(spans_o_class[idx]))  # randomly select a span in this instance
                         start, end = int(start), int(end)
                         sentence = ' '.join(line['tokens'][:start] + ['[ ', entity_mention, ' ]'] + line['tokens'][end:])
                         output = '{"answer": "O"}'
-                        instance = self.config['instance_template'].format(sentence=sentence, output=output)
+                        instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
                         examples += f'{index + 1})\n{instance}\n'
                         index += 1
 
@@ -159,6 +166,43 @@ class Annotation(Label):
             pass
         else:
             examples = ''
+            index = 0  # index of the examples
+            k_shot = self.anno_config['k_shot']
+            if self.anno_config['gold_span']:
+                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'gold_span', f'train_support_set_{k_shot}_shot.jsonl')
+            else:
+                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'span', f'train_support_set_{k_shot}_shot.jsonl')
+            with jsonlines.open(k_shot_file) as reader:
+                for line in reader:
+                    gold_mentions = dict()  # store the gold mentions according to the label
+                    # 1. find the gold spans according to the label
+                    for start, end, entity_mention, label_id in line['spans_labels']:
+                        label = self.id2label[int(label_id)]
+                        if label not in gold_mentions.keys():
+                            gold_mentions[label] = {(int(start), int(end), entity_mention)}  # init the set
+                        else:
+                            gold_mentions[label].add((int(start), int(end), entity_mention))
+
+                    # 2. replace the gold mentions with the formatted mentions
+                    for label, mentions in gold_mentions.items():
+                        # mentions is a set of gold mentions like {(start, end, gold_mention_span), ...}
+                        # sort the mentions by the end position by ascending order
+                        # e.g., {(7, 8, 'Mass.'), (5, 6, 'Westborough')} -> {(5, 6, 'Westborough'), (7, 8, 'Mass.'),}
+                        mentions = sorted(mentions, key=lambda x: x[1], reverse=False)
+
+                        output = []  # init the output for this label
+                        pre_end = 0  # the end position of the previous mention
+                        for start, end, mention in mentions:
+                            formatted_mention = f'@@ {mention} ##'
+                            output = output + line['tokens'][pre_end:start] + [formatted_mention]
+                            pre_end = end
+                        output += line['tokens'][pre_end:]  # add the rest tokens, or line['tokens'][end:]
+
+                        sent = ' '.join(line['tokens'])
+                        output = '"' + ' '.join(output) + '"'
+                        instance = self.anno_config['instance_template'].format(label=label, sentence=sent, output=output)
+                        examples += f'{index + 1})\n{instance}\n'
+                        index += 1
             usr_prompt = self._init_usr_prompt(examples)
             chat_message = [{"role": "user", "content": usr_prompt}]
         return chat_message
@@ -172,12 +216,12 @@ class Annotation(Label):
         :return:
         """
         for tokens, spans, spans_labels in zip(instances['tokens'], instances['spans'], instances['spans_labels']):
-            if 'single_type_prompt' in self.config.keys() and self.config['single_type_prompt']:
+            if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
                 # generate chat message using the single_type_prompt to extract entity directly by annotators
                 sentence = ' '.join(tokens)
                 for label, label_id in self.label2id.items():
                     chat_message = copy.deepcopy(chat_message_template)
-                    query = self.config['instance_template'].format(label=label, sentence=sentence, output='')
+                    query = self.anno_config['instance_template'].format(label=label, sentence=sentence, output='')
                     user_prompt = chat_message[-1]['content'] + '\n' + query
                     chat_message[-1] = {"role": "user", "content": user_prompt}
                     yield label_id, chat_message
@@ -188,15 +232,15 @@ class Annotation(Label):
                     sentence = ' '.join(tokens[:start] + ['[ ', entity_mention, ' ]'] + tokens[end:])
 
                     chat_message = copy.deepcopy(chat_message_template)
-                    query = self.config['instance_template'].format(sentence=sentence, output='')
+                    query = self.anno_config['instance_template'].format(sentence=sentence, output='')
                     user_prompt = chat_message[-1]['content'] + '\n' + query
                     chat_message[-1] = {"role": "user", "content": user_prompt}
-                    # if self.config['gold_span'] is True, label is the ground truth label id
+                    # if self.anno_config['gold_span'] is True, label is the ground truth label id
                     # yield the ID of the sentences, the mention span, the label id of the entity mention and the chat message
                     # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
                     # yield the ID of the sentences, the mention span, gold span and the chat message
                     span = (str(start), str(end), entity_mention)
-                    if self.config['gold_span']:  # use the gold span from the annotation
+                    if self.anno_config['gold_span']:  # use the gold span from the annotation
                         # In this case, entity mentions and gold labels are one-to-one
                         label = spans_labels[idx]
                         yield span, label, chat_message
@@ -218,9 +262,26 @@ class Annotation(Label):
 
         output_text = output_text.strip().replace('\_', '_')
 
+        # kwargs['single_type_prompt'] is True, we recognize all entity mention given the type
         if 'single_type_prompt' in kwargs.keys() and kwargs['single_type_prompt']:
-            # kwargs['single_type_prompt'] is True, we recognize all entity mention given the type
-            pattern = r'@@(.*?)##'
+
+            if 'analysis' in kwargs.keys() and kwargs['analysis']:  # add analysis process in the output
+                # output text is formatted like '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
+                # we need to extract JSON string from output.outputs[0].text first, then extract the answer from the JSON string
+                json_pattern = [ r'\{(.*?)\}', r'\{\{(.*?)\}\}']  # the pattern to extract JSON string
+
+                for pattern in json_pattern:
+                    result = re.search(pattern, output_text, re.DOTALL)  # only extract the first JSON string
+                    if result:
+                        try:
+                            json_string = '{' + result.group(1) + '}'
+                            output_text = json.loads(json_string)['answer'].strip()
+                            break
+                        except (json.decoder.JSONDecodeError, KeyError):
+                            continue
+
+            # at last, we extract mention spans from the output text
+            pattern = r'@@(\b.*?\b)##'
             matches = re.finditer(pattern, output_text, re.DOTALL)
             out_spans = []
             for match in matches:
@@ -239,7 +300,7 @@ class Annotation(Label):
 
             return out_spans
         else:
-            json_pattern = [r'\{\{(.*?)\}\}', r'\{(.*?)\}']  # the pattern to extract JSON string
+            json_pattern = [r'\{(.*?)\}', r'\{\{(.*?)\}\}']  # the pattern to extract JSON string
             # kwargs['single_type_prompt'] is False, we classify the given entity mention in the output_text
             # the out_label is just one label for the given entity mention
             out_label = 'O'  # we assign 'O' to label to this span if we cannot extract the JSON string
@@ -256,6 +317,23 @@ class Annotation(Label):
                         continue
             return out_label
 
+    def get_response(self, chat_message):
+        """
+        Get the response of the annotator using api.
+        :return:
+        """
+        client = OpenAI(
+            api_key=os.getenv("DASHSCOPE_API_KEY"),  # API_KEY
+            base_url=self.api_config['base_url'],  # base_url
+        )
+        completion = client.chat.completions.create(
+            model=self.api_config['model'],
+            messages=[{'role': 'system', 'content': 'You are a helpful assistant.'},
+                      {'role': 'user', 'content': '你是谁？'}]
+        )
+        pass
+
+
     def annotate_by_one(self, dataset, queue, **anno_cfg):
         """
         Annotate the dataset by one specific annotator.
@@ -269,7 +347,7 @@ class Annotation(Label):
 
         # 0. Some settings
         # 0.1 init wandb
-        if 'gold_span' in self.config.keys() and self.config['gold_span']:
+        if 'gold_span' in self.anno_config.keys() and self.anno_config['gold_span']:
             wandb.init(
                 project='ontonotes5_annotation_by_llm',
                 config=anno_cfg
@@ -278,23 +356,23 @@ class Annotation(Label):
         # 0.2 GPU setting
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # avoid parallelism in tokenizers
         # set GPU device
-        if self.config['cuda_devices'] == 'all':
+        if self.anno_config['cuda_devices'] == 'all':
             # set the GPU can be used
             cuda_devices = [str(i) for i in range(torch.cuda.device_count())]
             os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(cuda_devices)
-        elif len(self.config['cuda_devices']) == 1:
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.config['cuda_devices'])
+        elif len(self.anno_config['cuda_devices']) == 1:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.anno_config['cuda_devices'])
         else:
-            os.environ["CUDA_VISIBLE_DEVICES"] = self.config['cuda_devices']
+            os.environ["CUDA_VISIBLE_DEVICES"] = self.anno_config['cuda_devices']
         gpu_num = len(os.environ["CUDA_VISIBLE_DEVICES"].split(','))
 
         # 0.3 check the cache result of this annotator
         annotate_flag = True  # whether to annotate the dataset from scratch
         annotator_name = anno_cfg['name']
-        if 'gold_span' in self.config.keys() and self.config['gold_span']:
-            this_cache_dir = os.path.join(self.config['cache_dir'], 'gold_span', annotator_name)
+        if 'gold_span' in self.anno_config.keys() and self.anno_config['gold_span']:
+            this_cache_dir = os.path.join(self.anno_config['cache_dir'], 'gold_span', annotator_name)
         else:
-            this_cache_dir = os.path.join(self.config['cache_dir'], 'span', annotator_name)
+            this_cache_dir = os.path.join(self.anno_config['cache_dir'], 'span', annotator_name)
 
         try:
             cache_result = load_from_disk(this_cache_dir)
@@ -306,13 +384,13 @@ class Annotation(Label):
         # annotation process
         if annotate_flag:
             # 1. Init the chat messages
-            if 'single_type_prompt' in self.config.keys() and self.config['single_type_prompt']:
-                if 'k_shot' in self.config.keys() and self.config['k_shot']:  # single_type_prompt with few-shot setting
+            if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
+                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:  # single_type_prompt with few-shot setting
                     chat_message_template = self._init_chat_message_st_fs(anno_cfg)
                 else:  # single_type_prompt without few-shot setting
                     chat_message_template = self._init_chat_message_st(anno_cfg)
             else:
-                if 'k_shot' in self.config.keys() and self.config['k_shot']:  # 2-stage pipeline with few-shot setting
+                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:  # 2-stage pipeline with few-shot setting
                     chat_message_template = self._init_chat_message_fs(anno_cfg)
                 else:  # 2-stage pipeline without few-shot setting
                     chat_message_template = self._init_chat_message(anno_cfg)
@@ -336,7 +414,7 @@ class Annotation(Label):
 
             # 3. batch process
             # yield span, span_label, chat_message
-            dataset = dataset.select(range(200))
+            dataset = dataset.select(range(100))
             pbar = tqdm(fu.batched(self._generate_chat_messages(instances=dataset,
                                                                 chat_message_template=chat_message_template,),
                                    anno_cfg['anno_bs']),
@@ -344,7 +422,7 @@ class Annotation(Label):
 
             res_labels, res_label_ids = [], []  # store the output labels and label ids
 
-            # if self.config['gold_span'] is True, we use gold span from annotation
+            # if self.anno_config['gold_span'] is True, we use gold span from annotation
             # y_true stores the ground truth label ids, shaped like [label_id_0, label_id_1, ...]
             # else, we get the span from scratch by spaCy and stanza parsers
             # y_true stores the gold span and its label in a tuple, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
@@ -354,17 +432,17 @@ class Annotation(Label):
             for batch in pbar:
                 batch_spans, batch_labels, batch_chats = [], [], []  # store the span, the gold label ids / the gold spans, chat for each batch
                 batch_res_label_ids = []  # store the output label ids for each batch to evaluate
-                if 'single_type_prompt' in self.config.keys() and self.config['single_type_prompt']:
-                    # if self.config['single_type_prompt'] is True, batch is a tuple like ((label_0, chat_0), (label_1, chat_1),...)
+                if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
+                    # if self.anno_config['single_type_prompt'] is True, batch is a tuple like ((label_0, chat_0), (label_1, chat_1),...)
                     for label_id, chat in batch:
                         batch_labels.append(label_id)
                         batch_chats.append(chat)
                 else:
-                    if self.config['gold_span']:
-                        # if self.config['gold_span'] is true,
+                    if self.anno_config['gold_span']:
+                        # if self.anno_config['gold_span'] is true,
                         # batch is a tuple like ((span_0, label_0, chat_0),(span_1, label_1, chat_1)...)
                         for span, label, chat in batch:
-                            # if self.config['gold_span'] is True, label is the ground truth label id
+                            # if self.anno_config['gold_span'] is True, label is the ground truth label id
                             # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
                             batch_spans.append(span)
                             batch_labels.append(label)
@@ -382,12 +460,15 @@ class Annotation(Label):
                 outputs = anno_model.generate(templated_batch_chats, sampling_params)  # annotate
                 # for test
                 test_answer = []
-                # for output in outputs:
-                #     test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
+                for output in outputs:
+                    test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
                 for out_idx, output in enumerate(outputs):
                     output_text.append(output.outputs[0].text)
-                    if 'single_type_prompt' in self.config.keys() and self.config['single_type_prompt']:
-                        out_spans = self._process_output_text(output.outputs[0].text, single_type_prompt=self.config['single_type_prompt'])
+                    if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
+                        if 'analysis' in self.anno_config.keys() and self.anno_config['analysis']:
+                            out_spans = self._process_output_text(output.outputs[0].text, single_type_prompt=self.anno_config['single_type_prompt'], analysis=self.anno_config['analysis'])
+                        else:
+                            out_spans = self._process_output_text(output.outputs[0].text, single_type_prompt=self.anno_config['single_type_prompt'])
                         if len(out_spans) == 0:
                             continue
                         out_label_id = batch_labels[out_idx]
@@ -414,7 +495,7 @@ class Annotation(Label):
                 # print(pred_spans)
 
                 # evaluate batch results
-                if 'gold_span' in self.config.keys() and self.config['gold_span']:
+                if 'gold_span' in self.anno_config.keys() and self.anno_config['gold_span']:
                     wandb.log({'f1-macro': f1_score(y_true=batch_labels, y_pred=batch_res_label_ids, average='macro', zero_division=0),
                                'precision-weighted': precision_score(y_true=batch_labels, y_pred=batch_res_label_ids, average='weighted', zero_division=0),
                                'recall-weighted': recall_score(y_true=batch_labels, y_pred=batch_res_label_ids, average='weighted', zero_division=0),
@@ -427,7 +508,7 @@ class Annotation(Label):
 
             # 5. cache and evaluate the annotation result
             res_output_text = [output_text]
-            if 'gold_span' in self.config.keys() and self.config['gold_span']:
+            if 'gold_span' in self.anno_config.keys() and self.anno_config['gold_span']:
                 cache_result = {
                     "y_true": y_true,  # the ground truth label ids, shaped like [label_id_0, label_id_1, ...]
                     "labels": res_labels,  # the output labels, shaped like [label_0, label_1, ...]
@@ -455,7 +536,7 @@ class Annotation(Label):
             cache_result.save_to_disk(this_cache_dir)
 
         # 6. evaluation
-        if self.config['gold_span']:
+        if self.anno_config['gold_span']:
             self.evaluate(cache_result['y_true'], cache_result['label_ids'], annotator_name)
         else:
             # remove the '0'('O' label) span from the pred_spans
@@ -463,7 +544,7 @@ class Annotation(Label):
             self.evaluate(cache_result['y_true'][0], pred_spans, annotator_name)
         return cache_result
 
-    def annotate_by_all(self, dataset, quality=True):
+    def annotate_by_all(self, dataset, quality=True,**kwargs):
         """
         Annotate the dataset by all annotators.
         :param dataset: the dataset to be annotated
@@ -482,17 +563,17 @@ class Annotation(Label):
         quality_data = []  # store the prediction for each annotator
         while not queue.empty():
             result = queue.get()
-            if self.config['gold_span']:
+            if self.anno_config['gold_span']:
                 quality_data.append(result['label_ids'])
             else:
                 quality_data.append(result['pred_spans'])
 
         # 2. evaluate the annotation quality
         if quality:
-            if self.config['gold_span']:
-                qual_res_file = os.path.join(self.config['eval_dir'], 'gold_span', 'quality_res.txt')
+            if self.anno_config['gold_span']:
+                qual_res_file = os.path.join(self.anno_config['eval_dir'], 'gold_span', 'quality_res.txt')
             else:
-                qual_res_file = os.path.join(self.config['eval_dir'], 'span','quality_res.txt')
+                qual_res_file = os.path.join(self.anno_config['eval_dir'], 'span','quality_res.txt')
             quality_data = np.array(quality_data)  # quality_data with shape (num_annotators, num_instances)
             # quality_data with shape (num_instances, num_annotators)
             # transpose the quality_data to get the shape (num_instances, num_annotators)
@@ -504,15 +585,15 @@ class Annotation(Label):
     def evaluate(self, y_true, y_pred, annotator_name: str):
         """
         Evaluate the annotation results by an annotator.
-        :param y_true: if self.config['gold_span'] is True, we use gold span from annotation, y_true stores the ground truth label ids, shaped like
+        :param y_true: if self.anno_config['gold_span'] is True, we use gold span from annotation, y_true stores the ground truth label ids, shaped like
         [label_id_0, label_id_1, ...]. Else, we get the span from scratch by parser, y_true stores the gold span and their labels in a tuple,
         shaped like [(start, end, gold_mention_span, gold_label_id), ...].
-        :param y_pred: if self.config['gold_span'] is True, y_pred stores the predicted label ids. Else, y_pred stores the predicted spans and their labels.
+        :param y_pred: if self.anno_config['gold_span'] is True, y_pred stores the predicted label ids. Else, y_pred stores the predicted spans and their labels.
         :param annotator_name: the name of the annotator LLM.
         :return:
         """
 
-        if self.config['gold_span']:
+        if self.anno_config['gold_span']:
             # compute all classification metrics
             eval_results = {'f1-macro': f1_score(y_true=y_true, y_pred=y_pred, average='macro'),
                             'precision-weighted': precision_score(y_true=y_true, y_pred=y_pred, average='weighted', zero_division=0),
@@ -520,11 +601,11 @@ class Annotation(Label):
                             'accuracy & f1-micro': accuracy_score(y_true=y_true, y_pred=y_pred),
                             'matthews_corrcoef': matthews_corrcoef(y_true=y_true, y_pred=y_pred),
                             'cohen_kappa_score': cohen_kappa_score(y1=y_true, y2=y_pred)}
-            res_cache_dir = os.path.join(self.config['eval_dir'], 'gold_span')
+            res_cache_dir = os.path.join(self.anno_config['eval_dir'], 'gold_span')
         else:
             # compute span-level metrics
             eval_results = fu.compute_span_f1(y_true,  y_pred)
-            res_cache_dir = os.path.join(self.config['eval_dir'], 'span')
+            res_cache_dir = os.path.join(self.anno_config['eval_dir'], 'span')
 
         if not os.path.exists(res_cache_dir):
             os.makedirs(res_cache_dir, exist_ok=True)

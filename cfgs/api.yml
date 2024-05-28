@@ -1,0 +1,5 @@
+# api config
+# https://help.aliyun.com/zh/dashscope/developer-reference/compatibility-of-openai-with-dashscope/#43f870c0cfvsy
+
+base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+model: qwen-long,

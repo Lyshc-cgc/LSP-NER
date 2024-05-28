@@ -1,16 +1,24 @@
 data_cfg: cfgs/data_cfg.yml
 anno_cfgs:
-  raw_prompt:  # LLM classify the given entities
+  raw:  # LLM classify the given entities, 2-stage pipeline
     - cfgs/anno_cfg.yml
     - cfgs/anno_cfg_20.yml
     - cfgs/anno_cfg_gd_20.yml
-  single_type_prompt:  # LLM recognize entities given single type
-    - cfgs/anno_cfg_st_gd_20.yml
-    - cfgs/anno_cfg_st_20.yml
-    - cfgs/anno_cfg_st.yml
-  multi_type_prompt:  # LLM recognize all types of entities including 'O' types, using a chain of thought.
+  single_type:  # LLM recognize entities given single type
+    - cfgs/anno_cfg_st_gd_20.yml  # w/o analysis
+    - cfgs/anno_cfg_st_20.yml  # w/o analysis
+    - cfgs/anno_cfg_st.yml  # w/o analysis
+    - cfgs/anno_cfg_st_an.yml  # w analysis
+    - cfgs/anno_cfg_st_20_an.yml  # w analysis
+  multi_type:  # LLM recognize all types of entities including 'O' types, using a chain of thought.
     - cfgs/anno_cfg_mt_gd_20.yml
     - cfgs/anno_cfg_mt_20.yml
     - cfgs/anno_cfg_mt.yml
-  few_shot_prompt:
-    - cfgs/anno_cfg_fs.yml
+  few_shot:  # LLM classify the given entities, 2-stage pipeline, few-shot setting
+    - cfgs/anno_cfg_fs_1.yml  # 1-shot setting
+    - cfgs/anno_cfg_fs_5.yml  # 5-shot setting
+
+  st_few_shot:  # LLM recognize entities given single type, few-shot setting
+    - cfgs/anno_cfg_st_fs_5.yml
+    - cfgs/anno_cfg_st_fs_1.yml
+api_cfg: cfgs/api.yml

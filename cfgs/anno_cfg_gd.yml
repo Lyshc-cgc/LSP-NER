@@ -1,8 +1,8 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
 
 cuda_devices: all  # use all available GPUs
-cache_dir: data/anno_res  # cache directory
-eval_dir: data/eval  # evaluation results file dir
+cache_dir: data/ontonotes/anno_res  # cache directory
+eval_dir: data/ontonotes/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
 
 prompt_template: >-
@@ -309,7 +309,7 @@ annotators: # choose annotating model from your cfgs below.
    name: Qwen-gd
    chat: False
    # https://huggingface.co/Qwen/Qwen1.5-32B-Chat
-   checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat  # your path to the model checkpoint
+   checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
    # qwen has system prompt. We can input the examples in a form of chatting
    anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
    anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
