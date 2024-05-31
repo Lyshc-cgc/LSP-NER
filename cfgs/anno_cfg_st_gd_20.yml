@@ -20,8 +20,6 @@ prompt_template: >-
   Here are some examples to help you understand the task better:
   ### Examples
   {examples}
-  
-  ### Query
 
 system_role: >-
   You are a professional and helpful crowdsourcing entity annotator using English with the help of description of types.
@@ -327,7 +325,7 @@ annotators: # choose annotating model from your cfgs below.
 #   gpu_memory_utilization: 0.8
 
   -
-    name: Qwen-st-gd-20-wo-an
+    name: st-gd-20-wo-an
     chat: False
     checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4 # your path to the model checkpoint
     # qwen has system prompt. We can input the examples in a form of chatting
@@ -339,6 +337,7 @@ annotators: # choose annotating model from your cfgs below.
     anno_bs: 60  # batch size for this model
     dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
     gpu_memory_utilization: 0.9
+    stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
 
 #  -
 #   name: AquilaChat2  # good

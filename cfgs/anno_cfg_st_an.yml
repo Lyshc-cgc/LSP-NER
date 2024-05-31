@@ -17,8 +17,6 @@ prompt_template: >-
   Here are some examples to help you understand the task better:
   ### Examples
   {examples}
-  
-  ### Query
 
 system_role: >-
   You are a professional and helpful crowdsourcing entity annotator using English with the help of description of types.
@@ -184,7 +182,7 @@ examples:
     sentence: "The station is the rebuilt Dundee Tay Bridge railway station , which had been built by the North British Railway ."
     output: >-
       {{
-        "analysis": "The query is asking to identify 'FAC' named entities. In the sentence, the mention 'Dundee Tay Bridge railway station' is a railway station which is a man-made structure, so it is a FAC entity. The mention 'North British Railway' is a railway company, so it is an ORG entity. I need to mark the FAC entity mention 'Dundee Tay Bridge railway station' using '@@' and '##'  in the answer field",
+        "analysis": "The query is asking to identify 'FAC' named entities. In the sentence, the mention 'Dundee Tay Bridge railway station' is a railway station which is a man-made structure, so it is a FAC entity. The mention 'North British Railway' is a railway company, so it is an ORG entity. I need to mark the FAC entity mention 'Dundee Tay Bridge railway station' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
         "answer": "The station is the rebuilt @@ Dundee Tay Bridge railway station ## , which had been built by the North British Railway."
         }}
 
@@ -192,7 +190,7 @@ examples:
     sentence: "Rogers played hist first match on February 19 , 2004 against Jamaica , in Nain ."
     output: >-
       {{
-        "analysis": "The query is asking to identify 'DATE' named entities. According to the context in the sentence, the mention 'February 19 , 2004' is a special named entity which is a date ('Date') when Rogers played his first match. I need to mark the DATE entity mention 'February 19 , 2004' using '@@' and '##'  in the answer field",
+        "analysis": "The query is asking to identify 'DATE' named entities. According to the context in the sentence, the mention 'February 19 , 2004' is a special named entity which is a date ('Date') when Rogers played his first match. I need to mark the DATE entity mention 'February 19 , 2004' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
         "answer": "Rogers played hist first match on @@ February 19 , 2004 ## against Jamaica , in Nain ."
         }}
 
@@ -200,7 +198,7 @@ examples:
     sentence: "American Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
     output: >-
       {{
-        "analysis": "The query is asking to identify 'NORP' named entities. According to the context in the sentence, the mention 'American' is a special named entity which is an adjectival forms of adjectival forms of a nationality ('NORP'). I need to mark the NORP entity mention 'American' using '@@' and '##' in the answer field.",
+        "analysis": "The query is asking to identify 'NORP' named entities. According to the context in the sentence, the mention 'American' is a special named entity which is an adjectival forms of adjectival forms of a nationality ('NORP'). I need to mark the NORP entity mention 'American' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
         "answer": "@@ American ## Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
         }}
 
@@ -208,7 +206,7 @@ examples:
     sentence: "Among the most famous is the Battle of Hulao Pass , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
     output: >-
       {{
-        "analysis": "The query is asking to identify 'EVENT' named entities. According to the context in the sentence, the mention 'Battle of Hulao Pass' is a special named entity which is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. I need to mark the EVENT entity mention 'Battle of Hulao Pass' using '@@' and '##'  in the answer field.",
+        "analysis": "The query is asking to identify 'EVENT' named entities. According to the context in the sentence, the mention 'Battle of Hulao Pass' is a special named entity which is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. I need to mark the EVENT entity mention 'Battle of Hulao Pass' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
         "answer": "Among the most famous is the @@ Battle of Hulao Pass ## , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
         }}
 
@@ -240,7 +238,7 @@ annotators: # choose annotating model from your cfgs below.
 #   gpu_memory_utilization: 0.8
 
   -
-    name: Qwen-st-an
+    name: st-an
     chat: False
     checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
     # qwen has system prompt. We can input the examples in a form of chatting
@@ -252,6 +250,7 @@ annotators: # choose annotating model from your cfgs below.
     anno_bs: 20  # batch size for this model
     dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
     gpu_memory_utilization: 0.9
+    stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
 
 #  -
 #   name: AquilaChat2  # good

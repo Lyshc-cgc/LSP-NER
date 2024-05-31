@@ -5,7 +5,7 @@ anno_cfgs:
     - cfgs/anno_cfg_20.yml
     - cfgs/anno_cfg_gd_20.yml
   single_type:  # LLM recognize entities given single type
-    - cfgs/anno_cfg_st_gd_20.yml  # w/o analysis
+#    - cfgs/anno_cfg_st_gd_20.yml  # w/o analysis
     - cfgs/anno_cfg_st_20.yml  # w/o analysis
     - cfgs/anno_cfg_st.yml  # w/o analysis
     - cfgs/anno_cfg_st_an.yml  # w analysis

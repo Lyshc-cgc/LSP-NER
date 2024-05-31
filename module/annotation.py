@@ -7,8 +7,9 @@ import os
 import jsonlines
 import wandb
 import torch
-from openai import OpenAI
 import numpy as np
+from tenacity import retry, wait_random, stop_after_attempt
+from openai import OpenAI
 from datasets import load_from_disk, Dataset
 from tqdm import tqdm
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, matthews_corrcoef, cohen_kappa_score
@@ -19,18 +20,21 @@ class Annotation(Label):
     """
     The Annotation class is used to annotate the data.
     """
-    def __init__(self, anno_cfg):
+    def __init__(self, anno_cfg, api_config):
         super().__init__()
         self.anno_config = fu.get_config(anno_cfg)
+        self.api_config = fu.get_config(api_config) if api_config else None
+        self.use_api = True if api_config else False
         self.annotators_cfg = self.anno_config['annotators']
         self.annotator_ids = dict()
         for idx, anno_cfg in enumerate(self.annotators_cfg):
             self.annotator_ids[anno_cfg['name']] = idx
-
-    def _init_usr_prompt(self, examples) -> str:
+    
+    def _init_chat_msg_template(self, examples, use_api=False) -> list[None | dict[str, str]]:
         """
-        Init the user's prompt for the annotation models.
+        Get examples and init the chat messages for the annotation models.
         :param examples: the examples to be shown to annotators.
+        :param use_api: whether to use LLM API as annotator
         :return:
         """
         kwargs = {'examples': examples}
@@ -42,15 +46,21 @@ class Annotation(Label):
             kwargs.update({'types_prompt': self.anno_config['types_prompt']})
         if 'guidelines' in self.anno_config.keys() and self.anno_config['guidelines']:
             kwargs.update({'guidelines': self.anno_config['guidelines']})
+        sys_prompt = self.anno_config['prompt_template'].format(**kwargs)
 
-        usr_prompt = self.anno_config['prompt_template'].format(**kwargs)
-        return usr_prompt
-
-    def _init_chat_message(self, anno_cfg) -> list[None | dict[str, str]]:
+        chat_message = [{"role": "system", "content": sys_prompt}]
+        if use_api and self.api_config['model'] == 'qwen-long':
+            # see https://help.aliyun.com/document_detail/2788814.html?spm=a2c4g.2788811.0.0.1440240aUbuyYI#b7f81199e2laz
+            # when use qwen-long, we should add an extra system message for role-play to the chat_message
+            chat_message = [{'role': 'system', 'content': self.anno_config['system_role']}] + chat_message
+        return chat_message
+    
+    def _pipeline_msg(self, anno_cfg, use_api=False) -> list[None | dict[str, str]]:
         """
-        Init the chat messages for the annotation models using 2-stage pipeline.
+        Get examples and init the chat messages template for the annotation models using 2-stage pipeline.
 
         :param anno_cfg: The parameters of the annotation model.
+        :param use_api: whether to use LLM API as annotator
         :return:
         """
         if anno_cfg['chat']:
@@ -60,15 +70,14 @@ class Annotation(Label):
             for idx, example in enumerate(self.anno_config['examples']):
                 instance = self.anno_config['instance_template'].format(sentence=example['sentence'], output=example['output'])
                 examples += f'{idx + 1})\n{instance}'
-            usr_prompt = self._init_usr_prompt(examples)
-            chat_message = [{"role": "user", "content": usr_prompt}]
-        return chat_message
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
-    def _init_chat_message_st(self, anno_cfg) -> list[None | dict[str, str]]:
+    def _st_msg(self, anno_cfg, use_api=False) -> list[None | dict[str, str]]:
         """
-        Init the chat messages for the annotation models to extract entity directly by annotators according the single_type_prompt.
+        Get examples and init the chat messages for the annotation models to extract entity directly by annotators according the single_type_prompt.
 
         :param anno_cfg: The parameters of the annotation model.
+        :param use_api: whether to use LLM API as annotator
         :return:
         """
         if anno_cfg['chat']:
@@ -80,16 +89,15 @@ class Annotation(Label):
                                                                    sentence=example['sentence'],
                                                                    output=example['output'])
                 examples += f'{idx + 1})\n{instance}\n'
-            usr_prompt = self._init_usr_prompt(examples)
-            chat_message = [{"role": "user", "content": usr_prompt}]
-        return chat_message
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
-    def _init_chat_message_fs(self, anno_cfg) -> list[None | dict[str, str]]:
+    def _pipeline_fs_msg(self, anno_cfg, use_api=False) -> list[None | dict[str, str]]:
         """
-        Init the chat messages for the annotation models using 2-stage pipeline with few-shot settings.
+        Get examples and init the chat messages for the annotation models using 2-stage pipeline with few-shot settings.
         Init examples from the support set sampled from the dataset.
 
         :param anno_cfg: The parameters of the annotation model.
+        :param use_api: whether to use LLM API as annotator.
         :return:
         """
         if anno_cfg['chat']:
@@ -107,7 +115,7 @@ class Annotation(Label):
                 k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'gold_span', f'train_support_set_{k_shot}_shot.jsonl')
             else:
                 k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'span', f'train_support_set_{k_shot}_shot.jsonl')
-            with jsonlines.open(self.anno_config['']) as reader:
+            with jsonlines.open(k_shot_file) as reader:
                 for line in reader:
                     span_nums.append(len(line['spans_labels']))
                     spans = set()  # store the spans parsed by parsers
@@ -139,7 +147,7 @@ class Annotation(Label):
             # get the sampled spans of 'O' class and filter the empty spans
             sampled_idx = list(filter(lambda x: len(spans_o_class[x]) > 0, sampled_idx))
             sampled_idx = sampled_idx[:self.anno_config['k_shot']]  # Get the first k_shot elements
-            with jsonlines.open(self.anno_config['k_shot_file']) as reader:
+            with jsonlines.open(k_shot_file) as reader:
                 for idx, line in enumerate(reader):
                     if idx in sampled_idx:
                         start, end, entity_mention = random.choice(list(spans_o_class[idx]))  # randomly select a span in this instance
@@ -150,16 +158,15 @@ class Annotation(Label):
                         examples += f'{index + 1})\n{instance}\n'
                         index += 1
 
-            usr_prompt = self._init_usr_prompt(examples)
-            chat_message = [{"role": "user", "content": usr_prompt}]
-        return chat_message
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
-    def _init_chat_message_st_fs(self, anno_cfg) -> list[None | dict[str, str]]:
+    def _st_fs_msg(self, anno_cfg, use_api=False) -> list[None | dict[str, str]]:
         """
         Init the chat messages for the annotation models to extract entity directly by annotators according the single_type_prompt.
         Init examples from the support set sampled from the dataset.
 
         :param anno_cfg: The parameters of the annotation model.
+        :param use_api: whether to use LLM API as annotator
         :return:
         """
         if anno_cfg['chat']:
@@ -203,16 +210,14 @@ class Annotation(Label):
                         instance = self.anno_config['instance_template'].format(label=label, sentence=sent, output=output)
                         examples += f'{index + 1})\n{instance}\n'
                         index += 1
-            usr_prompt = self._init_usr_prompt(examples)
-            chat_message = [{"role": "user", "content": usr_prompt}]
-        return chat_message
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
-    def _generate_chat_messages(self, instances, chat_message_template):
+    def _generate_chat_msg(self, instances, chat_msg_template):
         """
         Generate chat messages for each instance. Meanwhile, init the labels for each instance.
 
         :param instances: The instances to be annotated.
-        :param chat_message_template: The chat message template for the annotating model.
+        :param chat_msg_template: The chat message template for the annotating model.
         :return:
         """
         for tokens, spans, spans_labels in zip(instances['tokens'], instances['spans'], instances['spans_labels']):
@@ -220,10 +225,10 @@ class Annotation(Label):
                 # generate chat message using the single_type_prompt to extract entity directly by annotators
                 sentence = ' '.join(tokens)
                 for label, label_id in self.label2id.items():
-                    chat_message = copy.deepcopy(chat_message_template)
+                    chat_message = copy.deepcopy(chat_msg_template)
                     query = self.anno_config['instance_template'].format(label=label, sentence=sentence, output='')
-                    user_prompt = chat_message[-1]['content'] + '\n' + query
-                    chat_message[-1] = {"role": "user", "content": user_prompt}
+                    user_prompt = '\n### Query\n' +  query
+                    chat_message.append({"role": "user", "content": user_prompt})
                     yield label_id, chat_message
             else:
                 # do not generate chat message given entity
@@ -231,10 +236,10 @@ class Annotation(Label):
                     start, end = int(start), int(end)
                     sentence = ' '.join(tokens[:start] + ['[ ', entity_mention, ' ]'] + tokens[end:])
 
-                    chat_message = copy.deepcopy(chat_message_template)
+                    chat_message = copy.deepcopy(chat_msg_template)
                     query = self.anno_config['instance_template'].format(sentence=sentence, output='')
-                    user_prompt = chat_message[-1]['content'] + '\n' + query
-                    chat_message[-1] = {"role": "user", "content": user_prompt}
+                    user_prompt = '\n### Query\n' + query
+                    chat_message.append({"role": "user", "content": user_prompt})
                     # if self.anno_config['gold_span'] is True, label is the ground truth label id
                     # yield the ID of the sentences, the mention span, the label id of the entity mention and the chat message
                     # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
@@ -250,7 +255,7 @@ class Annotation(Label):
                         yield span, chat_message
 
     @staticmethod
-    def _process_output_text(output_text, **kwargs):
+    def _process_output(output_text, **kwargs):
         """
         process the output text to get the label of the entity mention.
         :param output_text: the text output by the annotator model
@@ -281,7 +286,7 @@ class Annotation(Label):
                             continue
 
             # at last, we extract mention spans from the output text
-            pattern = r'@@(\b.*?\b)##'
+            pattern = r'@@(.*?)##'
             matches = re.finditer(pattern, output_text, re.DOTALL)
             out_spans = []
             for match in matches:
@@ -317,21 +322,28 @@ class Annotation(Label):
                         continue
             return out_label
 
-    def get_response(self, chat_message):
+    @retry(wait=wait_random(5,10),
+           stop=stop_after_attempt(5))
+    def get_response(self, client, chat_message, **kwargs):
         """
         Get the response of the annotator using api.
+        :param client: the client of the LLM API
+        :param chat_message: the chat message to be sent to the api.
         :return:
         """
-        client = OpenAI(
-            api_key=os.getenv("DASHSCOPE_API_KEY"),  # API_KEY
-            base_url=self.api_config['base_url'],  # base_url
-        )
+        # https://help.aliyun.com/zh/dashscope/developer-reference/compatibility-of-openai-with-dashscope/?spm=a2c4g.11186623.0.0.5fef6e432o2fr6
+
         completion = client.chat.completions.create(
             model=self.api_config['model'],
-            messages=[{'role': 'system', 'content': 'You are a helpful assistant.'},
-                      {'role': 'user', 'content': '你是谁？'}]
+            messages=chat_message,
+            stream=kwargs['stream'],
+            top_p=kwargs['top_p'],
+            temperature=kwargs['temperature'],
+            max_tokens=kwargs['max_tokens'],
         )
-        pass
+        output = completion.choices[0].message.content
+        print(output)
+        return output
 
 
     def annotate_by_one(self, dataset, queue, **anno_cfg):
@@ -368,7 +380,11 @@ class Annotation(Label):
 
         # 0.3 check the cache result of this annotator
         annotate_flag = True  # whether to annotate the dataset from scratch
-        annotator_name = anno_cfg['name']
+        if self.use_api:
+            annotator_name = self.api_config['model']+ '-' + anno_cfg['name']
+        else:
+            model_name = anno_cfg['checkpoint'].split('/')[-1].split('-')[0]
+            annotator_name =  model_name + '-' + anno_cfg['name']
         if 'gold_span' in self.anno_config.keys() and self.anno_config['gold_span']:
             this_cache_dir = os.path.join(self.anno_config['cache_dir'], 'gold_span', annotator_name)
         else:
@@ -386,37 +402,45 @@ class Annotation(Label):
             # 1. Init the chat messages
             if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
                 if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:  # single_type_prompt with few-shot setting
-                    chat_message_template = self._init_chat_message_st_fs(anno_cfg)
+                    chat_msg_template = self._st_fs_msg(anno_cfg=anno_cfg, use_api=self.use_api)
                 else:  # single_type_prompt without few-shot setting
-                    chat_message_template = self._init_chat_message_st(anno_cfg)
+                    chat_msg_template = self._st_msg(anno_cfg=anno_cfg, use_api=self.use_api)
             else:
                 if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:  # 2-stage pipeline with few-shot setting
-                    chat_message_template = self._init_chat_message_fs(anno_cfg)
+                    chat_msg_template = self._pipeline_fs_msg(anno_cfg=anno_cfg, use_api=self.use_api)
                 else:  # 2-stage pipeline without few-shot setting
-                    chat_message_template = self._init_chat_message(anno_cfg)
+                    chat_msg_template = self._pipeline_msg(anno_cfg=anno_cfg, use_api=self.use_api)
 
             # 2. Import the annotating model
-            # https://docs.vllm.ai/en/latest/getting_started/quickstart.html
+            if self.use_api:
+                client = OpenAI(
+                    api_key=os.getenv("DASHSCOPE_API_KEY"),  # API_KEY
+                    # api_key=os.getenv("DEEPSEEK_API_KEY"),  # API_KEY
+                    base_url=self.api_config['base_url'],  # base_url
+                )
 
-            anno_model = LLM(model=anno_cfg['checkpoint'],
-                             tensor_parallel_size=gpu_num,
-                             dtype=anno_cfg['dtype'],
-                             gpu_memory_utilization=anno_cfg['gpu_memory_utilization'],
-                             trust_remote_code=True)
-            sampling_params = SamplingParams(temperature=anno_cfg['anno_temperature'],
-                                             top_p=anno_cfg['anno_top_p'],
-                                             max_tokens=anno_cfg['anno_max_tokens'],
-                                             repetition_penalty=anno_cfg['repetition_penalty'])
+            else:
+                # if not use api, we employ local annotator using vllm
+                # https://docs.vllm.ai/en/latest/getting_started/quickstart.html
+                anno_model = LLM(model=anno_cfg['checkpoint'],
+                                 tensor_parallel_size=gpu_num,
+                                 dtype=anno_cfg['dtype'],
+                                 gpu_memory_utilization=anno_cfg['gpu_memory_utilization'],
+                                 trust_remote_code=True)
+                sampling_params = SamplingParams(temperature=anno_cfg['anno_temperature'],
+                                                 top_p=anno_cfg['anno_top_p'],
+                                                 max_tokens=anno_cfg['anno_max_tokens'],
+                                                 repetition_penalty=anno_cfg['repetition_penalty'])
 
-            # get anno_model's tokenizer to apply the chat template
-            # https://github.com/vllm-project/vllm/issues/3119
-            anno_tokenizer = anno_model.llm_engine.tokenizer.tokenizer
+                # get anno_model's tokenizer to apply the chat template
+                # https://github.com/vllm-project/vllm/issues/3119
+                anno_tokenizer = anno_model.llm_engine.tokenizer.tokenizer
 
             # 3. batch process
             # yield span, span_label, chat_message
-            dataset = dataset.select(range(100))
-            pbar = tqdm(fu.batched(self._generate_chat_messages(instances=dataset,
-                                                                chat_message_template=chat_message_template,),
+            dataset = dataset.select(range(50))
+            pbar = tqdm(fu.batched(self._generate_chat_msg(instances=dataset,
+                                                           chat_msg_template=chat_msg_template, ),
                                    anno_cfg['anno_bs']),
                         desc=f'annotating by {annotator_name}')
 
@@ -432,6 +456,8 @@ class Annotation(Label):
             for batch in pbar:
                 batch_spans, batch_labels, batch_chats = [], [], []  # store the span, the gold label ids / the gold spans, chat for each batch
                 batch_res_label_ids = []  # store the output label ids for each batch to evaluate
+
+                # store different information according to the different annotation settings
                 if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
                     # if self.anno_config['single_type_prompt'] is True, batch is a tuple like ((label_0, chat_0), (label_1, chat_1),...)
                     for label_id, chat in batch:
@@ -455,26 +481,39 @@ class Annotation(Label):
                             batch_spans.append(span)
                             batch_chats.append(chat)
 
-                # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
-                templated_batch_chats = anno_tokenizer.apply_chat_template(batch_chats, add_generation_prompt=True, tokenize=False)
-                outputs = anno_model.generate(templated_batch_chats, sampling_params)  # annotate
-                # for test
-                test_answer = []
-                for output in outputs:
-                    test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
+                if self.use_api:
+                    outputs = []
+                    for chat in batch_chats:
+                        outputs.append(self.get_response(client=client,
+                                                         chat_message=chat,
+                                                         stream=anno_cfg['stream'],
+                                                         temperature=anno_cfg['anno_temperature'],
+                                                         top_p=anno_cfg['anno_top_p'],
+                                                         max_tokens=anno_cfg['anno_max_tokens']))
+
+                else:
+                    # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
+                    templated_batch_chats = anno_tokenizer.apply_chat_template(batch_chats, add_generation_prompt=True, tokenize=False)
+                    outputs = anno_model.generate(templated_batch_chats, sampling_params)  # annotate
+                    # for test
+                    # test_answer = []
+                    # for output in outputs:
+                    #     test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
+                    outputs = [e.outputs[0].text for e in outputs]
+
                 for out_idx, output in enumerate(outputs):
-                    output_text.append(output.outputs[0].text)
+                    output_text.append(output)
                     if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
                         if 'analysis' in self.anno_config.keys() and self.anno_config['analysis']:
-                            out_spans = self._process_output_text(output.outputs[0].text, single_type_prompt=self.anno_config['single_type_prompt'], analysis=self.anno_config['analysis'])
+                            out_spans = self._process_output(output, single_type_prompt=self.anno_config['single_type_prompt'], analysis=self.anno_config['analysis'])
                         else:
-                            out_spans = self._process_output_text(output.outputs[0].text, single_type_prompt=self.anno_config['single_type_prompt'])
+                            out_spans = self._process_output(output, single_type_prompt=self.anno_config['single_type_prompt'])
                         if len(out_spans) == 0:
                             continue
                         out_label_id = batch_labels[out_idx]
                         pred_spans += [(*out_span, str(out_label_id)) for out_span in set(out_spans)]
                     else:
-                        out_label = self._process_output_text(output.outputs[0].text)
+                        out_label = self._process_output(output)
                         if out_label not in self.label2id.keys():
                             # check if the output label is redundant
                             tmp_out_label_0 = out_label.split(' ')[0].strip()
@@ -507,13 +546,12 @@ class Annotation(Label):
             ray.shutdown()
 
             # 5. cache and evaluate the annotation result
-            res_output_text = [output_text]
             if 'gold_span' in self.anno_config.keys() and self.anno_config['gold_span']:
                 cache_result = {
                     "y_true": y_true,  # the ground truth label ids, shaped like [label_id_0, label_id_1, ...]
                     "labels": res_labels,  # the output labels, shaped like [label_0, label_1, ...]
                     "label_ids": res_label_ids,  # the output label ids, shaped like [label_id_0, label_id_1, ...]
-                    "output_text": res_output_text
+                    "output_text": output_text, # shape like [out_text_0, out_text1, ...]
                 }
 
             else:
@@ -525,6 +563,7 @@ class Annotation(Label):
                 res_y_true.append(y_true)
                 res_pred_spans.append(pred_spans)
 
+                res_output_text = [output_text]
                 cache_result = {
                     "y_true": res_y_true,  # the gold span and its label, shaped like [(start, end, gold_mention_span, gold_label_id), ...]
                     "pred_spans": res_pred_spans,  # the predicted spans and its label, shaped like [(start, end, pred_mention_span, pred_label_id), ...]
@@ -544,7 +583,7 @@ class Annotation(Label):
             self.evaluate(cache_result['y_true'][0], pred_spans, annotator_name)
         return cache_result
 
-    def annotate_by_all(self, dataset, quality=True,**kwargs):
+    def annotate_by_all(self, dataset, quality=True):
         """
         Annotate the dataset by all annotators.
         :param dataset: the dataset to be annotated
