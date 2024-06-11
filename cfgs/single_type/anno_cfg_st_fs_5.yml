@@ -1,11 +1,12 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
 
 cuda_devices: all  # use all available GPUs
-cache_dir: data/ontonotes/anno_res  # cache directory
-eval_dir: data/ontonotes/eval  # evaluation results file dir
+cache_dir: data/{dataset_name}/anno_res  # cache directory
+eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
 single_type_prompt: True  # whether to generate chat message using the new prompt to extract entity directly by annotators
-analysis: True  # whether to add analysis process in the output
+support_set_dir: data/{dataset_name}/support_set  # support set directory
+k_shot: 5  # whether to use few-shot setting
 
 prompt_template: >-
   {system_role}
@@ -17,8 +18,6 @@ prompt_template: >-
   Here are some examples to help you understand the task better:
   ### Examples
   {examples}
-  
-  ### Query
 
 system_role: >-
   You are a professional and helpful crowdsourcing entity annotator using English with the help of description of types.
@@ -164,169 +163,11 @@ types_prompt: >-
 
 instance_template: >-
   task: You are about to read a sentence. Your task is to identify all '{label}' named entities in the sentence.
-    Your output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
-    Your answer should be a sentence with the entity mention marked with the "@@" and "##" symbols, where "@@" marks the 
-    start of the entity and "##" marks the end of the entity.
-    If there is no suitable entity mention in the sentence, you just only repeat the sentence.
+  Your output should be a sentence with the entity mention marked with the "@@" and "##" symbols, where "@@" marks the 
+  start of the entity and "##" marks the end of the entity. 
+  If there is no suitable entity mention in the sentence, you just only repeat the sentence.
   sentence: "{sentence}"
   output: {output}
-
-examples:
-  - label: PERSON
-    sentence: "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'PERSON' named entities. In the sentence, the mention 'investors' may be persons. However, it is not specific person, so it is not a PERSON type entity. There is no suitable mentions for PERSON type in the sentence. So I should just repeat the sentence in the answer field.",
-        "answer": "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
-        }}
-  - label: DATE
-    sentence: "Rogers played hist first match on February 19 , 2004 against Jamaica , in Nain ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'DATE' named entities. According to the context in the sentence, the mention 'February 19 , 2004' is a special named entity which is a date ('Date') when Rogers played his first match. I need to mark the DATE entity mention 'February 19 , 2004' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "Rogers played hist first match on @@ February 19 , 2004 ## against Jamaica , in Nain ."
-        }}
-  - label: EVENT
-    sentence: "Among the most famous is the Battle of Hulao Pass , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'EVENT' named entities. According to the context in the sentence, the mention 'Battle of Hulao Pass' is a special named entity which is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. I need to mark the EVENT entity mention 'Battle of Hulao Pass' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "Among the most famous is the @@ Battle of Hulao Pass ## , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
-        }}
-  - label: NORP
-    sentence: "American Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'NORP' named entities. According to the context in the sentence, the mention 'American' is a special named entity which is an adjectival forms of adjectival forms of a nationality ('NORP'). I need to mark the NORP entity mention 'American' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "@@ American ## Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
-        }}
-  - label: CARDINAL
-    sentence: "One state environmental regulator returned a report because `` it was n't heavy enough , it could n't have been correct , '' Mr. Maguire says ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'CARDINAL' named entities. According to the context in the sentence, the mention 'One' is a special named entity which is a cardinal number ('CARDINAL'). I need to mark the CARDINAL entity mention 'One' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "@@ One ## state environmental regulator returned a report because `` it was n't heavy enough , it could n't have been correct , '' Mr. Maguire says ."
-        }}
-
-  - label: PERSON
-    sentence: "Thus , optimistic entrepreneurs await a promised land of less red tape -- just as soon as Uncle Sam gets around to arranging it ."
-    output:  >-
-      {{
-        "analysis": "The query is asking to identify 'PERSON' named entities. According to the context in the sentence, the mention 'Uncle Sam' is a special named entity which is a person name ('PERSON'), because it can get around to arrange land of less red tape. I need to mark the PERSON entity mention 'Uncle Sam' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "Thus , optimistic entrepreneurs await a promised land of less red tape -- just as soon as @@ Uncle Sam ## gets around to arranging it ."
-        }}
-
-  - label: GPE
-    sentence: "The Tokyo maker of ceramic capacitors said it purchased a plant in Plymouth ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'GPE' named entities. According to the context in the sentence, the mention 'Tokyo' is a city ('GPE'), because the maker of ceramic capacitors is located in Tokyo.  Also, the mention 'Plymouth' is a city ('GPE'). I need to mark the GPE entity mentions 'Tokyo' and 'Plymouth' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "The @@ Tokyo ## maker of ceramic capacitors said it purchased a plant in @@ Plymouth ##."
-        }}
-
-  - label: LAW
-    sentence: "The U.S. - Japan Security Treaty can continue , sort of ."
-    output:  >-
-      {{
-        "analysis": "The query is asking to identify 'LAW' named entities. According to the context in the sentence, the mention 'The U.S. - Japan Security Treaty' is a special named entity which is a law ('LAW'), because it is a security treaty. I need to mark the LAW entity mention 'The U.S. - Japan Security Treaty' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "@@ The U.S. - Japan Security Treaty ## can continue , sort of ."
-        }}
-
-  - label: ORG
-    sentence: "The LDP won by a landslide in the last election , in July 1986 ."
-    output:  >-
-      {{
-        "analysis": "The query is asking to identify 'ORG' named entities. According to the context in the sentence, the mention 'LDP' is a special named entity which is an organization ('ORG'), because it is a political party. I need to mark the ORG entity mention 'LDP' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "The @@ LDP ## won by a landslide in the last election , in July 1986 ."
-        }}
-
-  - label: PERCENT
-    sentence: "A recent example is the 3 % consumption tax on all commercial activities ."
-    output:  >-
-      {{
-        "analysis": "The query is asking to identify 'PERCENT' named entities. According to the context in the sentence, the mention '3 %' is a special named entity which is a percent ('PERCENT'), because it is a consumption tax rate. I need to mark the PERCENT entity mention '3 %' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "A recent example is the @@ 3 % ## consumption tax on all commercial activities ."
-        }}
-
-  - label: ORDINAL
-    sentence: "On second thought , make that just mom ."
-    output:  >-
-      {{
-        "analysis": "The query is asking to identify 'ORDINAL' named entities. According to the context in the sentence, the mention 'second' is a special named entity which is an ordinal number ('ORDINAL'). I need to mark the ORDINAL entity mention 'second' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "On @@ second ## thought , make that just mom ."
-        }}
-
-  - label: MONEY
-    sentence: "`` But I 'm going to lose $ 50,000 to $ 60,000 on it ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'MONEY' named entities. According to the context in the sentence, the mention '$ 50,000 to $ 60,000' is a special named entity which is a money ('MONEY'), because it is a monetary value. I need to mark the MONEY entity mention '$ 50,000 to $ 60,000' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "`` But I 'm going to lose @@ $ 50,000 to $ 60,000 ## on it ."
-        }}
-
-  - label: WORK_OF_ART
-    sentence: "But James Madison refuted that argument in one of the most celebrated political treatises ever written , No. 10 of the Federalist Papers ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'WORK_OF_ART' named entities. According to the context in the sentence, the mentions 'No. 10' and 'the Federalist Papers' are special named entities which are a work of art ('WORK_OF_ART'), because they are political treatises. I need to separately mark the WORK_OF_ART entity mentions 'No. 10' and 'the Federalist Papers' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "But James Madison refuted that argument in one of the most celebrated political treatises ever written , @@ No. 10 ## of @@ the Federalist Papers ## ."
-        }}
-
-  - label: FAC
-    sentence: "The station is the rebuilt Dundee Tay Bridge railway station , which had been built by the North British Railway ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'FAC' named entities. In the sentence, the mention 'Dundee Tay Bridge railway station' is a railway station which is a man-made structure, so it is a FAC entity. I need to mark the FAC entity mention 'Dundee Tay Bridge railway station' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "The station is the rebuilt @@ Dundee Tay Bridge railway station ## , which had been built by the North British Railway."
-        }}
-
-  - label: TIME
-    sentence: "On this morning , he does n't sell much in Radzymin , either ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'TIME' named entities. According to the context in the sentence, the mention 'this morning' is a special named entity which is a time ('TIME'). I need to mark the TIME entity mention 'this morning' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "On @@ this morning ## , he does n't sell much in Radzymin , either ."
-        }}
-
-  - label: LOC
-    sentence: "The tribe is one of the poorest in the Pacific Northwest ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'LOC' named entities. According to the context in the sentence, the mention 'the Pacific Northwest' is a special named entity which is a location ('LOC'), because it is a natural region. I need to mark the LOC entity mention 'the Pacific Northwest' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "The tribe is one of the poorest in @@ the Pacific Northwest ##."
-        }}
-
-  - label: QUANTITY
-    sentence: "Daily output is expected to decline by at least another 500,000 barrels next year ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'QUANTITY' named entities. According to the context in the sentence, the entity mention 'at least another 500,000 barrels' is a special named entity which is a quantity ('QUANTITY'), because it is a measurement. I need to mark the QUANTITY entity mention 'at least another 500,000 barrels' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "Daily output is expected to decline by @@ at least another 500,000 barrels ## next year ."
-        }}
-
-  - label: PRODUCT
-    sentence: "Coca - Cola Co. yesterday said singer Elton John signed to appear in an ad for Diet Coke ."
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'PRODUCT' named entities. According to the context in the sentence, the mention 'Diet Coke' is a special named entity which is a product ('PRODUCT'), because it is a product name. I need to mark the PRODUCT entity mention 'Diet Coke' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "Coca - Cola Co. yesterday said singer Elton John signed to appear in an ad for @@ Diet Coke ##."
-        }}
-
-  - label: LANGUAGE
-    sentence: "`` I got to get back to school and straighten out my English . ''"
-    output: >-
-      {{
-        "analysis": "The query is asking to identify 'LANGUAGE' named entities. According to the context in the sentence, the entity mention 'English' is a special named entity which is a language ('LANGUAGE'), because it is a named language. I need to mark the LANGUAGE entity mention 'English' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
-        "answer": "`` I got to get back to school and straighten out my @@ English ## . ''"
-        }}
-
-  - label: EVENT
-    sentence: "It does n't pay a dividend , and this trust needs income ."
-    output: >-
-      {{
-        "analysis": "There is no EVENT mentions in the sentence, so I should repeat the sentence in the answer field.",
-        "answer": "It does n't pay a dividend , and this trust needs income ."
-        }}
 
 annotators: # choose annotating model from your cfgs below.
 #  -
@@ -356,18 +197,18 @@ annotators: # choose annotating model from your cfgs below.
 #   gpu_memory_utilization: 0.8
 
   -
-    name: st-20-an
+    name: st-5-shot
     chat: False
-    checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
+    checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4 # your path to the model checkpoint
     # qwen has system prompt. We can input the examples in a form of chatting
     # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
     anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
     anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-    anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
+    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty
-    anno_bs: 20  # batch size for this model
+    anno_bs: 10  # batch size for this model
     dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-    gpu_memory_utilization: 0.9
+    gpu_memory_utilization: 0.8
     stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
 
 #  -

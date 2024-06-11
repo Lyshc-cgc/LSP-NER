@@ -1,29 +1,31 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-
-data_path: data/ontonotes/ontonotes5.py
+dataset_name: ontonotes
+data_path: data/{dataset_name}/ontonotes5.py
 num_proc: 6
 
 # process config
+tokens_field: tokens  # the field name of the tokens, please make sure the field name is consistent with the data
+ner_tags_field: tags  # the field name of the NER tag, please make sure the field name is consistent with the data
 gold_span: False  # if True, we use gold span from OntoNotes5. If False, we get span from scratch by spaCy and stanza parsers
 batch_size: 4096 # batch size for data processing
 split: test  # train, dev, test
 shuffle: True  # whether to shuffle the data
 select: 1000  # select a subset of data. If you want to use all data, set select as 0 or empty
-preprocessed_dir: data/ontonotes/preprocess  # the directory to store the preprocessed data
+preprocessed_dir: data/{dataset_name}/preprocess  # the directory to store the preprocessed data
 continue: True  # whether to continue to use the data last time
-continue_dir: data/ontonotes/continue  # the directory to store the continued data to be annotated
+continue_dir: data/{dataset_name}/continue  # the directory to store the continued data to be annotated
 
 support_set: True  # whether to sample support set
 k_shot: 1  # the number of examples for each label in the training set
 sample_split: train  # the dataset split you want to sample support set from.
-ss_cache_dir: data/ontonotes/support_set  # the directory to store the support set cache
+ss_cache_dir: data/{dataset_name}/support_set  # the directory to store the support set cache
 
-statistics_dir: data/ontonotes/statistics  # the directory to store the statistics of the dataset
+statistics_dir: data/{dataset_name}/statistics  # the directory to store the statistics of the dataset
 ########################################################
 # if gold_span is False, we get span from scratch
 # set config as follows
 
-eval_dir: data/ontonotes/eval  # evaluation results file dir
+eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 eval_quality: True  # whether to evaluate the quality of the spans recognized by stanza and spaCy parsers
 
 # strict or loose. In strict mode, we get spans based on intersection of spaCy and Stanza results.

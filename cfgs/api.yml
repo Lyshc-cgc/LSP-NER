@@ -1,10 +1,29 @@
 # api config
-# https://help.aliyun.com/zh/dashscope/developer-reference/compatibility-of-openai-with-dashscope/#43f870c0cfvsy
 
-# qwen
-base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-model: qwen-long # qwen-long, qwen-plus
+qwen:
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  model: qwen-long # qwen-long, qwen-plus
+  api_key: DASHSCOPE_API_KEY  # the os environment variable name
+  batch_api: False  # whether to use the bacth api
 
-# deepseek
-#base_url: https://api.deepseek.com/v1
-#model: deepseek-chat # qwen-long, qwen-plus
+deepseek:
+  base_url: https://api.deepseek.com/v1
+  model: deepseek-chat # qwen-long, qwen-plus
+  api_key: DEEPSEEK_API_KEY  # the os environment variable name
+  batch_api: False  # whether to use the bacth api
+
+glm:
+  base_url: https://open.bigmodel.cn/api/paas/v4/
+  endpoint: /v4/chat/completions
+  model: glm-4 # glm-4, GLM-3-Turbo
+  api_key: ZHIPU_API_KEY  # the os environment variable name
+  batch_api: True  # whether to use the bacth api
+
+gpt:
+  base_url: https://fastapi.top/v1
+#  base_url: https://api.chatgpt-3.vip/v1
+  model: gpt-3.5-turbo-instruct # gpt-3.5-turbo(gpt-3.5-turbo-0125), gpt-4o
+  api_key: OPENAI_API_KEY  # the os environment variable name
+  batch_api: False  # whether to use the bacth api
+
+# add more model api that are openai-compatible here

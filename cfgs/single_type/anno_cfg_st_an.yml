@@ -1,45 +1,25 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
 
 cuda_devices: all  # use all available GPUs
-cache_dir: data/ontonotes/anno_res  # cache directory
-eval_dir: data/ontonotes/eval  # evaluation results file dir
+cache_dir: data/{dataset_name}/anno_res  # cache directory
+eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
+single_type_prompt: True  # whether to generate chat message using the new prompt to extract entity directly by annotators
+analysis: True  # whether to add analysis process in the output
 
 prompt_template: >-
   {system_role}
-  Here is your task:
-  ### Task
-  {task_prompt}
-  
-  Here are types and their descriptions:
+
+  Here are entity types and their descriptions:
   ### Types
   {types_prompt}
-
+    
   Here are some examples to help you understand the task better:
   ### Examples
   {examples}
 
-# for chat model using chat template
-prompt_template_chat: >-
-  {system_role}
-  Here is your task:
-  ### Task
-  {task_prompt}
-  
-  Here are types and their descriptions:
-  ### Types
-  {types_prompt}
-
 system_role: >-
-  You are a professional and helpful crowdsourcing data annotator using English with the help of description of types.
-
-task_prompt: >-
-  You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']'), 
-  where '[' refers to the start of the entity mention and ']' refers to the end of the entity mention.
-  First, you need to determine if the mention is a special named entity instead of a common noun phrase.
-  Then, you should annotate the given entity mention using the provided types.
-  If there is no suitable type, you can choose 'O' as answer.
-  The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
+  You are a professional and helpful crowdsourcing entity annotator using English with the help of description of types.
 
 types_prompt: >-
   1) PERSON
@@ -181,48 +161,54 @@ types_prompt: >-
   "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
 
 instance_template: >-
+  task: You are about to read a sentence. Your task is to identify all '{label}' named entities in the sentence.
+    Your output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
+    Your answer should be a sentence with the entity mention marked with the "@@" and "##" symbols, where "@@" marks the 
+    start of the entity and "##" marks the end of the entity.
+    If there is no suitable entity mention in the sentence, you just only repeat the sentence.
   sentence: "{sentence}"
   output: {output}
 
 examples:
-  -
-    sentence: "While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony ."
+  - label: PERSON
+    sentence: "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
     output: >-
       {{
-        "analysis": "According to the context in the sentence, the entity mention 'his plots' is just a common noun phrase. There is no suitable type for it. So, I should annotate it as 'O'",
-        "answer": "O"
+        "analysis": "The query is asking to identify 'PERSON' named entities. In the sentence, the mention 'investors' may be persons. However, it is not specific person, so it is not a PERSON type entity. There is no suitable mention for PERSON type in the sentence. So I should just repeat the sentence in the answer field.",
+        "answer": "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
         }}
-  -
-    sentence: "The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a special named entity which is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
-        "answer": "FAC"
-        }}
-  -
-    sentence: "Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is a special named entity which is a date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
-        "answer": "DATE"
-        }}
-  -
-    sentence: "[ American ] Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'American' is a special named entity which is an adjectival forms of adjectival forms of a nationality ('NORP'). So I should annotate it as 'NORP'",
-        "answer": "NORP"
-        }}
-  -
-    sentence: "Among the most famous is the [ Battle of Hulao Pass] , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
-    output: >-
-      {{
-        "analysis": "According to the context in the sentence, the entity mention 'Battle of Hulao Pass' is a special named entity which is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. So I should annotate it as 'EVENT'",
-        "answer": "EVENT"
-        }}
-    
-    
 
+  - label: FAC
+    sentence: "The station is the rebuilt Dundee Tay Bridge railway station , which had been built by the North British Railway ."
+    output: >-
+      {{
+        "analysis": "The query is asking to identify 'FAC' named entities. In the sentence, the mention 'Dundee Tay Bridge railway station' is a railway station which is a man-made structure, so it is a FAC entity. The mention 'North British Railway' is a railway company, so it is an ORG entity. I need to mark the FAC entity mention 'Dundee Tay Bridge railway station' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
+        "answer": "The station is the rebuilt @@ Dundee Tay Bridge railway station ## , which had been built by the North British Railway."
+        }}
+
+  - label: DATE
+    sentence: "Rogers played hist first match on February 19 , 2004 against Jamaica , in Nain ."
+    output: >-
+      {{
+        "analysis": "The query is asking to identify 'DATE' named entities. According to the context in the sentence, the mention 'February 19 , 2004' is a special named entity which is a date ('Date') when Rogers played his first match. I need to mark the DATE entity mention 'February 19 , 2004' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
+        "answer": "Rogers played hist first match on @@ February 19 , 2004 ## against Jamaica , in Nain ."
+        }}
+
+  - label: NORP
+    sentence: "American Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
+    output: >-
+      {{
+        "analysis": "The query is asking to identify 'NORP' named entities. According to the context in the sentence, the mention 'American' is a special named entity which is an adjectival forms of adjectival forms of a nationality ('NORP'). I need to mark the NORP entity mention 'American' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
+        "answer": "@@ American ## Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
+        }}
+
+  - label: EVENT
+    sentence: "Among the most famous is the Battle of Hulao Pass , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
+    output: >-
+      {{
+        "analysis": "The query is asking to identify 'EVENT' named entities. According to the context in the sentence, the mention 'Battle of Hulao Pass' is a special named entity which is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. I need to mark the EVENT entity mention 'Battle of Hulao Pass' in the answer field, where '@@' marks the start of mentions and '##' marks the end of mentions.",
+        "answer": "Among the most famous is the @@ Battle of Hulao Pass ## , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
+        }}
 
 annotators: # choose annotating model from your cfgs below.
 #  -
@@ -234,10 +220,10 @@ annotators: # choose annotating model from your cfgs below.
 #   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
 #   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
 #   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-#   anno_bs: 50  # batch size for this model
+#   anno_bs: 40  # batch size for this model
 #   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-#   gpu_memory_utilization: 0.9
-
+#   gpu_memory_utilization: 0.8
+#
 #  -
 #   name: Mistral
 #   chat: False
@@ -252,7 +238,7 @@ annotators: # choose annotating model from your cfgs below.
 #   gpu_memory_utilization: 0.8
 
   -
-    name: raw
+    name: st-an
     chat: False
     checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
     # qwen has system prompt. We can input the examples in a form of chatting
@@ -261,8 +247,8 @@ annotators: # choose annotating model from your cfgs below.
     anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
     anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty
-    anno_bs: 60  # batch size for this model
-    dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+    anno_bs: 10  # batch size for this model
+    dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
     gpu_memory_utilization: 0.9
     stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
 

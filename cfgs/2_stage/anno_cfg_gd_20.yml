@@ -1,8 +1,8 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
 
 cuda_devices: all  # use all available GPUs
-cache_dir: data/ontonotes/anno_res  # cache directory
-eval_dir: data/ontonotes/eval  # evaluation results file dir
+cache_dir: data/{dataset_name}/anno_res  # cache directory
+eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
 
 prompt_template: >-

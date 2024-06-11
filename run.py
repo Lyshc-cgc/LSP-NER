@@ -2,20 +2,35 @@ from module.annotation import Annotation
 from module.processor import Processor
 from module.func_util import get_config
 
+def annotate(anno_cfg, api_cfg, labels_cfg, formated_dataset, **kwargs):
+    anno = Annotation(anno_cfg, api_cfg, labels_cfg)
+    anno.annotate_by_all(formated_dataset, quality=False, **kwargs)
+
 def main():
     config = get_config('config.yml')
     # 1. pre-process the data
-    proc = Processor(config['data_cfg'])
+    dataset_name = 'conll'  # 'conll', 'ontonotes'
+    assert dataset_name in config['data_cfgs'].keys() # ('conll', 'ontonotes')
+
+    data_cfg = get_config(config['data_cfgs'][dataset_name])
+    labels_cfg = get_config(config['labels_cfg'])[dataset_name]
+    proc = Processor(data_cfg, labels_cfg)
     formated_dataset = proc.process()
 
     # 2. annotate the data by LLMs
-    use_api = True
-    prompt_type = 'st_few_shot'
-    api_cfg = config['api_cfg'] if use_api else None
+    # 2.1 api config
+    use_api = False
+    api_model = 'gpt'
+    assert api_model in ('qwen', 'deepseek', 'glm', 'gpt')
+    api_cfg = get_config(config['api_cfg'])[api_model] if use_api else None
+
+    # 2.2 annotation prompt settings
+    prompt_type = 'raw'
     assert prompt_type in ('raw', 'single_type', 'multi_type', 'few_shot', 'st_few_shot')
-    for anno_cfg in config['anno_cfgs'][prompt_type]:
-        anno = Annotation(anno_cfg, api_cfg)
-        anno.annotate_by_all(formated_dataset, quality=False)
+    anno_cfgs = config['anno_cfgs'][prompt_type]
+    for anno_cfg in anno_cfgs:
+        anno_cfg = get_config(anno_cfg)
+        annotate(anno_cfg, api_cfg, labels_cfg, formated_dataset, dataset_name=dataset_name)
 
 if __name__ == '__main__':
     main()

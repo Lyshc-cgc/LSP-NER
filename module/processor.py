@@ -13,9 +13,9 @@ class Processor(Label):
     """
     The Processor class is used to process the data.
     """
-    def __init__(self, data_cfg):
-        super().__init__()
-        self.config = fu.get_config(data_cfg)
+    def __init__(self, data_cfg, labels_cfg):
+        super().__init__(labels_cfg)
+        self.config = data_cfg
         self.num_proc = self.config['num_proc']
 
     @staticmethod
@@ -198,13 +198,17 @@ class Processor(Label):
         """
         res_spans = []  # store the gold spans of the instances
         res_spans_labels = []  # store the label ids of the gold spans
-        for inst_id, (tokens, tags) in enumerate(zip(instances['tokens'], instances['tags'])):
+
+        # for ontonotes5, the tokens and ner tags are stored in 'tokens' and 'tags' fields.
+        # for conll2003, the tokens and ner tags are stored in 'tokens' and 'ner_tags' fields.
+        tokens_filed, ner_tags_field = self.config['tokens_field'], self.config['ner_tags_field']
+        for inst_id, (tokens, tags) in enumerate(zip(instances[tokens_filed], instances[ner_tags_field])):
             instance_spans, instance_spans_labels = self._get_span_and_tags(tokens, tags)
             res_spans.append(instance_spans)
             res_spans_labels.append(instance_spans_labels)
         return {
-            'tokens': instances['tokens'],
-            'tags': instances['tags'],
+            'tokens': instances[tokens_filed],
+            'tags': instances[ner_tags_field],
             'spans': res_spans,  # the gold spans of the instances
             'spans_labels': res_spans_labels  # the label ids of the gold spans
         }
@@ -221,6 +225,7 @@ class Processor(Label):
         import benepar
         import torch
         from nltk.tree import Tree
+        from spacy.matcher import Matcher
         from spacy.training import Alignment
 
         # 0. some settings
@@ -257,7 +262,8 @@ class Processor(Label):
         res_spa_cons_string = []  # store the constituency parse tree of the instances, predicted by the spaCy parser
 
         # main process
-        all_raw_tokens, all_raw_tags = instances['tokens'], instances['tags']
+        tokens_filed, ner_tags_field = self.config['tokens_field'], self.config['ner_tags_field']
+        all_raw_tokens, all_raw_tags = instances[tokens_filed], instances[ner_tags_field]
         # 1. Some preparations
 
         # 1.2. covert tokens to sentence
@@ -299,7 +305,24 @@ class Processor(Label):
             # and https://spacy.io/api/doc#noun_chunks
             spacy_result = [(chunk.start, chunk.end, chunk.text) for chunk in spa_doc.noun_chunks]
 
-            # 2.1.4 get spans by spaCy constituency parsing
+            # 2.1.4 get specific span by spaCy Matcher
+            # refer to https://spacy.io/usage/rule-based-matching
+            # and https://spacy.io/api/matcher
+            matcher = Matcher(spacy_nlp.vocab)
+            # define the pattern
+            patterns = [
+                [{"TAG": "NNP"}, {"TAG": "NNP"}],  # 2 consecutive proper nouns
+                [{"TAG": "NNP"}, {"TAG": "NNP"}, {"TAG": "NNP"}],  # 3 consecutive proper nouns
+                [{"TAG": "NNP"}, {"TAG": "NNP"}, {"TAG": "NNP"}, {"TAG": "NNP"}],  # 4 consecutive proper nouns
+                # add more
+            ]
+            matcher.add("proper_nouns", patterns)
+            matches = matcher(spa_doc)
+            for match_id, start, end in matches:
+                span = spa_doc[start:end]  # The matched span
+                spacy_result.append((start, end, span.text))
+
+            # 2.1.5 get spans by spaCy constituency parsing
             # get constituency parse tree (String) of the sentence
             # refer to https://github.com/nikitakit/self-attentive-parser
             spa_cons_string = list(spa_doc.sents)[0]._.parse_string
@@ -317,9 +340,9 @@ class Processor(Label):
             # init the spacy spans from Np subtrees
             # We initiate the start character index and end character index with -1.
             spa_subtrees_spans = [(-1, -1, ' '.join(subtree)) for subtree in spa_subtrees]
-            spacy_result += fu.convert_ch_position(sent, spa_subtrees_spans)
+            spacy_result += self._convert_ch_position(sent, spa_subtrees_spans)
             tmp_sent = ' '.join(spa_cons_tree.flatten()[:])  # get the sentence from the constituency parse tree
-            spacy_result += fu.convert_ch_position(tmp_sent, spa_subtrees_spans)
+            spacy_result += self._convert_ch_position(tmp_sent, spa_subtrees_spans)
 
             # 2.3. Select the union of two parsers' recognition results
             # convert start/end index to string, to be consistent with the format of spans. This operation ensures
@@ -339,11 +362,14 @@ class Processor(Label):
             #              for start, end, text in list(set(spacy_result) | set(stanza_result))
             #              if len(text) <= max_span_len  # filter out long span
             #              ]
-            spans = [(str(start), str(end), text)
-                     for start, end, text in set(spacy_result) if len(text) <= max_span_len  # filter out long span
-                     ]
 
-            res_spans.append(spans)
+            # spans = [(str(start), str(end), text)
+            #          for start, end, text in set(spacy_result) if len(text) <= max_span_len  # filter out long span
+            #          ]
+
+            spans = [(str(start), str(end), text) for start, end, text in set(spacy_result)]
+
+            res_spans.append(list(set(spans)))  # remove duplicate spans
 
             # 2.4. There are spans identified by the parser, which are not gold spans.
             # Their labels should be set to 'O'. After that， they are included as part of the gold spans and labels.
@@ -354,8 +380,8 @@ class Processor(Label):
             res_ex_spans_labels.append(ex_spans_labels)
 
         return {
-            'tokens': instances['tokens'],
-            'tags': instances['tags'],
+            'tokens': instances[tokens_filed],
+            'tags': instances[ner_tags_field],
             'spans': res_spans,  # the spans of the instances, predicted by the spaCy parser, shape like (start, end, mention_span)
             'spans_labels': res_spans_labels,  # store the gold spans and labels of the instances, shape like (start, end, gold_mention_span, gold_label)
             'expand_spans_labels': res_ex_spans_labels,   # store the expanded gold spans and labels, shape like (start, end, expanded_gold_mention_span, expanded_gold_label_id)
@@ -426,7 +452,8 @@ class Processor(Label):
         dataset = dataset.map(lambda example, index: {"id": index}, with_indices=True)  # add index column
         # add new_tags column
         # original tags is BIO schema, we convert it to the new tags schema where the 'O' tag is 0, 'B-DATE' and 'I-DATE' are the same tag, etc.
-        dataset = dataset.map(lambda example: {"new_tags": [self.covert_tag2id[tag] for tag in example['tags']]})
+        ner_tags_field = self.config['ner_tags_field']
+        dataset = dataset.map(lambda example: {"new_tags": [self.covert_tag2id[tag] for tag in example[ner_tags_field]]})
 
         support_set = set()  # the support set
         counter = {label: 0 for label in label_nums.keys()}  # counter to record the number of entities for each label in the support set
@@ -470,6 +497,10 @@ class Processor(Label):
 
     def process(self):
         # 0. init config
+        self.config['preprocessed_dir'] = self.config['preprocessed_dir'].format(dataset_name=self.config['dataset_name'])
+        self.config['continue_dir'] = self.config['continue_dir'].format(dataset_name=self.config['dataset_name'])
+        self.config['eval_dir'] = self.config['eval_dir'].format(dataset_name=self.config['dataset_name'])
+        self.config['ss_cache_dir'] = self.config['ss_cache_dir'].format(dataset_name=self.config['dataset_name'])
         if self.config['gold_span']:
             preprocessed_dir = os.path.join(self.config['preprocessed_dir'], 'gold_span')  # the directory to store the formatted dataset
             process_func = self.data_format_gold
@@ -496,7 +527,8 @@ class Processor(Label):
             preprocessed_dataset = load_from_disk(preprocessed_dir)
         except FileNotFoundError:
             # 2. format datasets to get span from scratch
-            raw_dataset = load_dataset(self.config['data_path'], num_proc=self.config['num_proc'])
+            data_path = self.config['data_path'].format(dataset_name=self.config['dataset_name'])
+            raw_dataset = load_dataset(data_path, num_proc=self.config['num_proc'])
             preprocessed_dataset = raw_dataset.map(process_func,
                                                batched=True,
                                                batch_size=self.config['batch_size'],
