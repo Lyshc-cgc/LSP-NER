@@ -4,6 +4,9 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
+support_set_dir: data/{dataset_name}/support_set  # support set directory
+k_shot: 1  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
+multi_type_prompt: True  # if True, we use multi-type prompt. If False, we use single-type prompt.
 
 prompt_template: >-
   {system_role}
@@ -26,7 +29,7 @@ prompt_template_chat: >-
   ### Task
   {task_prompt}
   
-  Here are types and their descriptions:
+  Here are possible types and their descriptions:
   ### Types
   {types_prompt}
 
@@ -34,12 +37,8 @@ system_role: >-
   You are a professional and helpful crowdsourcing data annotator using English with the help of description of types.
 
 task_prompt: >-
-  You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']'), 
-  where '[' refers to the start of the entity mention and ']' refers to the end of the entity mention.
-  First, you need to determine if the mention is a special named entity instead of a common noun phrase.
-  Then, you should annotate the given entity mention using the provided types.
-  If there is no suitable type, you can choose 'O' as answer.
-  The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
+  Identify the entities and recognize their types in the sentence.
+  The output should be a string in the format of the tuple list,  like'[(type 0, entity 0), (type 1, entity 1), ...]'.
 
 types_prompt:
   ontonotes: >-
@@ -180,9 +179,6 @@ types_prompt:
     LANGUAGE indicates "Language". This type represents any named language. 
     Following are some examples. The named entity mentions are marked within square brackets:
     "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
-    
-    19) O
-    O indicates "Other". These are named entities that do not fit into the other types.
 
   conll: >-
     1) PER
@@ -197,88 +193,10 @@ types_prompt:
     4) MISC
     MISC indicates "Miscellaneous". These include events, nationalities, products and works of art, etc. This type is 
     used for named entities that do not fit into the other three types. 
-    
-    5) O
-    O indicates "Other". These are named entities that do not fit into the other types.
 
 instance_template: >-
   sentence: "{sentence}"
   output: {output}
-
-examples:
-  ontonotes:
-    -
-      sentence: "While Goosen was busy measuring out [ his plots ] , the Duke of Edinburgh , Prince Alfred of Edinburgh , visited the Cape Colony ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'his plots' is just a common noun phrase. There is no suitable type for it. So, I should annotate it as 'O'",
-          "answer": "O"
-          }}
-    -
-      sentence: "The station is the rebuilt [ Dundee Tay Bridge ] railway station , which had been built by the North British Railway ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'Dundee Tay Bridge' is a special named entity which is a facility ('FAC'), because it is a railway station. So I should annotate it as 'FAC'",
-          "answer": "FAC"
-          }}
-    -
-      sentence: "Rogers played hist first match on [ February 19 , 2004 ] against Jamaica , in Nain ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'February 19 , 2004' is a special named entity which is a date ('Date') when Rogers played his first match. So I should annotate it as 'DATE'",
-          "answer": "DATE"
-          }}
-    -
-      sentence: "[ American ] Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'American' is a special named entity which is an adjectival forms of adjectival forms of a nationality ('NORP'). So I should annotate it as 'NORP'",
-          "answer": "NORP"
-          }}
-    -
-      sentence: "Among the most famous is the [ Battle of Hulao Pass] , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'Battle of Hulao Pass' is a special named entity which is an event ('EVENT'), because it is clash between the dissidents led by Yuan Shao and Dong Zhuo 's elite armies. So I should annotate it as 'EVENT'",
-          "answer": "EVENT"
-          }}
-    
-    
-
-
-
-  conll:
-    - sentence: "EU rejects [ German ] call to boycott British lamb ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'German' is a named entity which is a nationality (Miscellaneous). So, I should annotate it as 'MISC'",
-          "answer": "MISC"
-          }}
-    - sentence: "He said further scientific study was required and if it was found that action was needed it should be taken by the [ European Union ]."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'European Union' is a named entity which is an organizational entities (Organization). So, I should annotate it as 'ORG'.",
-          "answer": "ORG"
-          }}
-    - sentence: "Only France and Britain backed [ Fischler ]'s proposal ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'Fischler' is a named entity which is a person name (Person). So, I should annotate it as 'PER'.",
-          "answer": "PER"
-          }}
-    - sentence: "[ Germany ] imported 47,600 sheep from Britain last year , nearly half of total imports ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention 'Germany' a named entity which is a county (LOC). So, I should annotate it as 'LOC'",
-          "answer": "LOC"
-          }}
-    - sentence: "It brought in 4,275 tonnes of British mutton , some [ 10 percent ] of overall imports ."
-      output: >-
-        {{
-          "analysis": "According to the context in the sentence, the entity mention '10 percent' is not a named entity. There is no suitable type for it. So, I should annotate it as 'O'",
-          "answer": "O"
-          }}
-        
 
 annotators: # choose annotating model from your cfgs below.
 #  -
@@ -308,7 +226,7 @@ annotators: # choose annotating model from your cfgs below.
 #   gpu_memory_utilization: 0.8
 
   -
-    name: raw-00
+    name: mt-1-shot-01
     chat: False
     checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint for local inference
     # qwen has system prompt. We can input the examples in a form of chatting

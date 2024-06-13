@@ -9,7 +9,7 @@ def annotate(anno_cfg, api_cfg, labels_cfg, formated_dataset, **kwargs):
 def main():
     config = get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'conll'  # 'conll', 'ontonotes'
+    dataset_name = 'ontonotes'  # 'conll', 'ontonotes'
     assert dataset_name in config['data_cfgs'].keys() # ('conll', 'ontonotes')
 
     data_cfg = get_config(config['data_cfgs'][dataset_name])
@@ -25,8 +25,8 @@ def main():
     api_cfg = get_config(config['api_cfg'])[api_model] if use_api else None
 
     # 2.2 annotation prompt settings
-    prompt_type = 'raw'
-    assert prompt_type in ('raw', 'single_type', 'multi_type', 'few_shot', 'st_few_shot')
+    prompt_type = 'mt_few_shot'
+    assert prompt_type in ('raw', 'single_type', 'mt_few_shot', 'few_shot', 'st_few_shot')
     anno_cfgs = config['anno_cfgs'][prompt_type]
     for anno_cfg in anno_cfgs:
         anno_cfg = get_config(anno_cfg)

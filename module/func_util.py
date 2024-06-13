@@ -115,3 +115,33 @@ def compute_span_f1(gold_spans, pred_spans):
         'f1': f1
     }
 
+def find_span(text, span):
+    """
+    Find the span in the text.
+    :param text: str, the text.
+    :param span: the mention.
+    :return: list, the list of spans.
+    """
+    res_spans = []
+    # Find the start character index and end character index of the first matched span.
+    re_span = re.escape(span)  # escape special characters in the span
+    pattern_0 = r"\b(" + re_span + r")\b"  # match the whole span after escaping special characters
+    pattern_1 = r"\s(" + re_span + r")\s"  # match the span surrounded by spaces after escaping special characters
+    patterns = [pattern_0, pattern_1]
+    res_matches = []
+    for pattern in patterns:
+        matches = re.finditer(pattern, text)
+        res_matches += [match for match in matches]
+
+    for match in res_matches:
+        start_ch_idx, end_ch_idx = match.span(1)  # get the capture group 1
+        # To get the start position of the first word of the matched NP span,
+        # we just need to count the number of spaces before the start character
+        start = text[:start_ch_idx].count(' ')
+
+        # To get the end position of the last word of the matched NP span,
+        # we just need to count the number of spaces before the end character
+        end = text[:end_ch_idx].count(' ') + 1  # end position of the NP span, excluded
+        res_spans.append((start, end, span))
+
+    return res_spans

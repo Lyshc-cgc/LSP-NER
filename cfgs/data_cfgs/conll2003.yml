@@ -16,8 +16,8 @@ preprocessed_dir: data/{dataset_name}/preprocess  # the directory to store the p
 continue: True  # whether to continue to use the data last time
 continue_dir: data/{dataset_name}/continue  # the directory to store the continued data to be annotated
 
-support_set: False  # whether to sample support set
-k_shot: 1  # the number of examples for each label in the training set
+support_set: True  # whether to sample support set
+k_shot: 5  # the number of examples for each label in the training set
 sample_split: train  # the dataset split you want to sample support set from.
 ss_cache_dir: data/{dataset_name}/support_set  # the directory to store the support set cache
 

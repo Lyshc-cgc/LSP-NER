@@ -23,144 +23,159 @@ prompt_template: >-
 system_role: >-
   You are a professional and helpful crowdsourcing entity annotator using English with the help of description of types.
 
-types_prompt: >-
-  1) PERSON
-  PERSON indicates "Person Name". These are proper names of people, including fictional people, first names, last names, 
-  individual or family names, unique nicknames. Generational markers (Jr., IV) are included in the extent, while 
-  honorifics (Ms., Dr.) and occupational titles (President, Secretary) are NOT included.
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "Dr. [Bob Smith, Sr.]","[Henry IV]", "Secretary [Rice]", "[John] and [Jane Doe]".
+types_prompt:
+  ontonotes: >-
+    1) PERSON
+    PERSON indicates "Person Name". These are proper names of people, including fictional people, first names, last names, 
+    individual or family names, unique nicknames. Generational markers (Jr., IV) are included in the extent, while 
+    honorifics (Ms., Dr.) and occupational titles (President, Secretary) are NOT included.
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "Dr. [Bob Smith, Sr.]","[Henry IV]", "Secretary [Rice]", "[John] and [Jane Doe]".
+    
+    2) NORP
+    NORP indicates "Nationality, Other, Religion, Political". This type represents adjectival forms of GPE and Location names, 
+    as well as adjectival forms of named religions, heritage and political affiliation. Also marked are head words which 
+    refer to people using the name of an entity with which they are affiliated, often a GPE or Organization. 
+    The distinction between NORP and other types is morphological. "American" and "Americans" are adjectival nationalities, 
+    while "America" and "US" are GPEs, regardless of context. 
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "[Eastern European] cuisine", "the [Democratic] candidate", "the three [Democrats]", "a [Chinese-American] dentist", 
+    "a [Jewish] doctor".
   
-  2) NORP
-  NORP indicates "Nationality, Other, Religion, Political". This type represents adjectival forms of GPE and Location names, 
-  as well as adjectival forms of named religions, heritage and political affiliation. Also marked are head words which 
-  refer to people using the name of an entity with which they are affiliated, often a GPE or Organization. 
-  The distinction between NORP and other types is morphological. "American" and "Americans" are adjectival nationalities, 
-  while "America" and "US" are GPEs, regardless of context. 
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "[Eastern European] cuisine", "the [Democratic] candidate", "the three [Democrats]", "a [Chinese-American] dentist", 
-  "a [Jewish] doctor".
+    3) FAC
+    FAC indicates "Facility". Names of man-made structures: infrastructure (streets, bridges), buildings, monuments, etc. 
+    belong to this type. Buildings that are referred to using the name of the company or organization that uses them 
+    should be marked as FAC when they refer to the physical structure of the building itself, usually in a locative way: 
+    "I'm reporting live from right outside [Massachusetts General Hospital]". 
+    Following are some examples.The named entity mentions are marked within square brackets:
+    "[5th Avenue]","[Logan Airport]", "[Tobin Bridge]", "the [Lincoln Memorial]", "[I-95]".
+  
+    4) ORG
+    ORG indicates "Organization". These are names of companies, government agencies, educational institutions, sport teams. 
+    Names of hospitals, museums, and libraries should be marked, unless the mentions are clearly referring to the building 
+    in a locative way. Adjectival forms of organization names are included, as are metonymic mentions of the buildings or 
+    locations associated with these organizations. A group, team, force, etc. must be officially sanctioned in some way to 
+    be classified as an Organization. Organized crime groups, such as the Mafia, are not marked. Terrorist groups such as Al-Qaeda, however, should be marked.
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "[Congress]", "the [Senate]", "the [Supreme Court]", "the [University of Michigan]", "[Bank of America]", "the [New York Times]"
+    "the [White House]".
+        
+    5) GPE
+    GPE indicates "Geographical/Social/Political Entity". This type represents names of countries, cities, states, provinces, 
+    municipalities. In cases where the GPE name is modified, such as "southern California," [California] is marked as a GPE 
+    name and there is NO other markup. Following are some examples. The named entity mentions are marked within square brackets:
+    "the south of [Baghdad]", "[Busan], [South Korea]", "[Moscow]", "[Taiwan]".
+        
+    6) LOC
+    LOC indicates "Location". This type represents Names of geographical locations other than GPEs. 
+    These include mountain ranges, coasts, borders, planets, geo-coordinates, bodies of water. 
+    Also included in this category are named regions such as the Middle East, areas, neighborhoods, continents and regions 
+    of continents. Do NOT mark deictics or other non-proper nouns: here, there, everywhere, etc. 
+    As with GPEs, directional modifiers such as "southern" are only marked when they are part of the location name itself. 
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "[South Boston]", "[Eastern Europe]", "[Asia]", "[North China]", "[the Penghu Islands]".
+  
+    7) PRODUCT
+    PRODUCT indicates "Product". This can be name of any product, generally a model name or model name and number.  Named 
+    foods are also included. Credit cards, checking accounts, CDs, and credit plans are NOT marked. References that include 
+    manufacturer and product should be marked as two separate named entities, ORG + PRODUCT: [Apple] [iPod], [Dell] [Inspiron], 
+    [Ford] [Mustang]. Following are some examples. The named entity mentions are marked within square brackets:
+    "[iPod]", "[Inspiron 1700]", "], "[Mustang GT]", "[Velveeta]".
+  
+    8) DATE
+    DATE indicates "Date". This type used to classify a reference to a date or period, etc. Age also falls under this 
+    category, even when it’s a noun phrase referring to a person: the 5-year-old, 5 years old, Jane Doe, 5, etc. Extent 
+    should include modifiers & prepositions that denote specific time, such as [2 days ago], [the past two days], but not 
+    those that mark duration, such as "for [2 days]." Do not separate mentions into their component parts: [November 2, 2001] 
+    and [from the fall of 1962 through the spring of 1967] should be marked in their entirety, without separate markups 
+    for "November 2," "2001, "the fall," "1962," "the spring," and "1967.". Dates that are part of rate expressions such as 
+    "once per day" or "twice a year" should NOT be marked. 
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "[Monday]", "[seventies] fashion", "[the 1940’s]", "[this past summer]", "[the fall of 2008]", "[our fourth quarter]","in [winter]".
+    
+    9) TIME
+    TIME indicates "Time". This type represents Any time ending with "a.m." or "p.m." If the "a.m." or "p.m." is explicit, 
+    it must be tagged along with the numbers. Other times of day (units smaller than a day) and time durations less than 24 
+    hours are also marked: morning, noon, night, 3 hours, a minute. Do not separate mentions into their component parts: 
+    [the evening of July 4th] and [5:00am, April 5, 2008] should be marked in their entirety, without separate markups for 
+    "evening," "July 4th," "5:00am," and "April 5, 2008".
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "[1:00 a.m.]", "[yesterday morning]", "[noon]", "[this evening]", "[night]", "[three hours]".
+        
+    10) PERCENT
+    PERCENT indicates "Percent". This type represents any percentage. A percent symbol or the actual word percent must be 
+    explicit and included in the extent. If the percent is implicit, the number should be marked CARDINAL. Following are some 
+    examples. The named entity mentions are marked within square brackets:
+    "[50%]", "[a hundred and twenty percent]".
+    
+    11) MONEY
+    MONEY indicates "Money". This type represents any monetary value including all monetary denominations. The monetary unit 
+    must be explicit and included in the extent. If the monetary unit is implicit, the number should be marked CARDINAL. 
+    Only values should be tagged—generic references to money should not. For example, in "money invested overseas," there 
+    is no markup for "money." In rate expressions such as "$ per unit," the unit should not be included in the extent. 
+    For example, in "$3 per share," the extent is [$3]. Following are some examples. The named entity mentions are marked 
+    within square brackets:
+    "[50 yen]", "[one million dollars]", "[$10.20]", "[ten cents] apiece".
+    
+    12) QUANTITY
+    QUANTITY indicates "Quantity". This type used to classify measurements with standardized units. If the unit of measurement 
+    is implicit or non-standard (3 handfuls, 2 football fields, 10 points), the number should be marked CARDINAL. One exception 
+    to this rule is formulaic references to the age, height, and weight of a person: Joe Smith, 44, five ten, two twenty. 
+    In this instance, [five ten] and [two twenty] should be marked QUANTITY. (While [44] should be marked DATE).
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "[2 miles]", "[4 grams]", "[32 degrees]", "[10 pounds]".
+    
+    13) ORDINAL
+    ORDINAL indicates "Ordinal". This type represents all ordinal numbers, including adverbials. 
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "in the [first] place", "[third] in line", "[fourth] place", "[secondly]".
+    
+    14) CARDINAL
+    CARDINAL indicates 'Cardinal'. This type represents numerals, including whole numbers, fractions, and decimals, that provide 
+    a count or quantity and do not fall under a unit of measurement, money, percent, date or time. For "Nasdaq composite 
+    fill [1.39] to [451.37]." the numbers are marked CARDINAL because there is no monetary unit. Headless numerical phrases 
+    are also covered in this category: "reducing employment from [18,000] to [16,000]." Numbers identifying list items should 
+    also be included. Pronominal mentions of "one" should not be tagged. Following are some examples. 
+    The named entity mentions are marked within square brackets:
+    "[about half]", "[hundreds] and [hundreds]", "[one-third]", "[four]", "[exactly 4534.5]".
+    
+    15) EVENT
+    EVENT indicates "Event". This type represents named hurricanes, battles, wars, sports events, attacks, etc. 
+    Metonymic mentions (marked with a ~) of the date or location of an event, or of the organization(s) involved, are included:
+    "the impact of [nine-eleven]" ~ the events of September 11, 2001, "Lincoln's speech after [Gettysburg]" ~ the battle of Gettysburg,
+    "[Enron] has made us all suspicious" ~ the Enron scandal, "[WWII]", "[Hurricane Katrina]", "the [New York City Marathon]".
+    
+    16) WORK_OF_ART
+    WORK_OF_ART indicates "Work of Art". This type represents titles of books, songs, television programs and other creations. 
+    Also includes awards. These are usually surrounded by quotation marks in the article (though the quotations are not included 
+    in the annotation). Newspaper headlines should only be marked if they are referential. In other words the headline of 
+    the article being annotated should not be marked but if in the body of the text here is a reference to an article, then 
+    it is markable as a work of art. Following are some examples. The named entity mentions are marked within square brackets:
+    "[The Empire Strikes Back]", "the [Bible]", "[Blue Moon]", "[Larry King Live]", "[Nobel Peace Prize]", "her [Emmy]", "an [Oscar] nomination".
+    
+    17) LAW
+    LAW indicates "Law". This type represents any document that has been made into a law, including named treaties and sections 
+    and chapters of named legal documents. Following are some examples. The named entity mentions are marked within square brackets:
+    "[IRS code 4]", "the [Johnson Act]", "[Article II of the Constitution]", "the so-called special [301 provision] of the act".
+    
+    18) LANGUAGE
+    LANGUAGE indicates "Language". This type represents any named language. 
+    Following are some examples. The named entity mentions are marked within square brackets:
+    "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
 
-  3) FAC
-  FAC indicates "Facility". Names of man-made structures: infrastructure (streets, bridges), buildings, monuments, etc. 
-  belong to this type. Buildings that are referred to using the name of the company or organization that uses them 
-  should be marked as FAC when they refer to the physical structure of the building itself, usually in a locative way: 
-  "I'm reporting live from right outside [Massachusetts General Hospital]". 
-  Following are some examples.The named entity mentions are marked within square brackets:
-  "[5th Avenue]","[Logan Airport]", "[Tobin Bridge]", "the [Lincoln Memorial]", "[I-95]".
-
-  4) ORG
-  ORG indicates "Organization". These are names of companies, government agencies, educational institutions, sport teams. 
-  Names of hospitals, museums, and libraries should be marked, unless the mentions are clearly referring to the building 
-  in a locative way. Adjectival forms of organization names are included, as are metonymic mentions of the buildings or 
-  locations associated with these organizations. A group, team, force, etc. must be officially sanctioned in some way to 
-  be classified as an Organization. Organized crime groups, such as the Mafia, are not marked. Terrorist groups such as Al-Qaeda, however, should be marked.
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "[Congress]", "the [Senate]", "the [Supreme Court]", "the [University of Michigan]", "[Bank of America]", "the [New York Times]"
-  "the [White House]".
-      
-  5) GPE
-  GPE indicates "Geographical/Social/Political Entity". This type represents names of countries, cities, states, provinces, 
-  municipalities. In cases where the GPE name is modified, such as "southern California," [California] is marked as a GPE 
-  name and there is NO other markup. Following are some examples. The named entity mentions are marked within square brackets:
-  "the south of [Baghdad]", "[Busan], [South Korea]", "[Moscow]", "[Taiwan]".
-      
-  6) LOC
-  LOC indicates "Location". This type represents Names of geographical locations other than GPEs. 
-  These include mountain ranges, coasts, borders, planets, geo-coordinates, bodies of water. 
-  Also included in this category are named regions such as the Middle East, areas, neighborhoods, continents and regions 
-  of continents. Do NOT mark deictics or other non-proper nouns: here, there, everywhere, etc. 
-  As with GPEs, directional modifiers such as "southern" are only marked when they are part of the location name itself. 
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "[South Boston]", "[Eastern Europe]", "[Asia]", "[North China]", "[the Penghu Islands]".
-
-  7) PRODUCT
-  PRODUCT indicates "Product". This can be name of any product, generally a model name or model name and number.  Named 
-  foods are also included. Credit cards, checking accounts, CDs, and credit plans are NOT marked. References that include 
-  manufacturer and product should be marked as two separate named entities, ORG + PRODUCT: [Apple] [iPod], [Dell] [Inspiron], 
-  [Ford] [Mustang]. Following are some examples. The named entity mentions are marked within square brackets:
-  "[iPod]", "[Inspiron 1700]", "], "[Mustang GT]", "[Velveeta]".
-
-  8) DATE
-  DATE indicates "Date". This type used to classify a reference to a date or period, etc. Age also falls under this 
-  category, even when it’s a noun phrase referring to a person: the 5-year-old, 5 years old, Jane Doe, 5, etc. Extent 
-  should include modifiers & prepositions that denote specific time, such as [2 days ago], [the past two days], but not 
-  those that mark duration, such as "for [2 days]." Do not separate mentions into their component parts: [November 2, 2001] 
-  and [from the fall of 1962 through the spring of 1967] should be marked in their entirety, without separate markups 
-  for "November 2," "2001, "the fall," "1962," "the spring," and "1967.". Dates that are part of rate expressions such as 
-  "once per day" or "twice a year" should NOT be marked. 
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "[Monday]", "[seventies] fashion", "[the 1940’s]", "[this past summer]", "[the fall of 2008]", "[our fourth quarter]","in [winter]".
-  
-  9) TIME
-  TIME indicates "Time". This type represents Any time ending with "a.m." or "p.m." If the "a.m." or "p.m." is explicit, 
-  it must be tagged along with the numbers. Other times of day (units smaller than a day) and time durations less than 24 
-  hours are also marked: morning, noon, night, 3 hours, a minute. Do not separate mentions into their component parts: 
-  [the evening of July 4th] and [5:00am, April 5, 2008] should be marked in their entirety, without separate markups for 
-  "evening," "July 4th," "5:00am," and "April 5, 2008".
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "[1:00 a.m.]", "[yesterday morning]", "[noon]", "[this evening]", "[night]", "[three hours]".
-      
-  10) PERCENT
-  PERCENT indicates "Percent". This type represents any percentage. A percent symbol or the actual word percent must be 
-  explicit and included in the extent. If the percent is implicit, the number should be marked CARDINAL. Following are some 
-  examples. The named entity mentions are marked within square brackets:
-  "[50%]", "[a hundred and twenty percent]".
-  
-  11) MONEY
-  MONEY indicates "Money". This type represents any monetary value including all monetary denominations. The monetary unit 
-  must be explicit and included in the extent. If the monetary unit is implicit, the number should be marked CARDINAL. 
-  Only values should be tagged—generic references to money should not. For example, in "money invested overseas," there 
-  is no markup for "money." In rate expressions such as "$ per unit," the unit should not be included in the extent. 
-  For example, in "$3 per share," the extent is [$3]. Following are some examples. The named entity mentions are marked 
-  within square brackets:
-  "[50 yen]", "[one million dollars]", "[$10.20]", "[ten cents] apiece".
-  
-  12) QUANTITY
-  QUANTITY indicates "Quantity". This type used to classify measurements with standardized units. If the unit of measurement 
-  is implicit or non-standard (3 handfuls, 2 football fields, 10 points), the number should be marked CARDINAL. One exception 
-  to this rule is formulaic references to the age, height, and weight of a person: Joe Smith, 44, five ten, two twenty. 
-  In this instance, [five ten] and [two twenty] should be marked QUANTITY. (While [44] should be marked DATE).
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "[2 miles]", "[4 grams]", "[32 degrees]", "[10 pounds]".
-  
-  13) ORDINAL
-  ORDINAL indicates "Ordinal". This type represents all ordinal numbers, including adverbials. 
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "in the [first] place", "[third] in line", "[fourth] place", "[secondly]".
-  
-  14) CARDINAL
-  CARDINAL indicates 'Cardinal'. This type represents numerals, including whole numbers, fractions, and decimals, that provide 
-  a count or quantity and do not fall under a unit of measurement, money, percent, date or time. For "Nasdaq composite 
-  fill [1.39] to [451.37]." the numbers are marked CARDINAL because there is no monetary unit. Headless numerical phrases 
-  are also covered in this category: "reducing employment from [18,000] to [16,000]." Numbers identifying list items should 
-  also be included. Pronominal mentions of "one" should not be tagged. Following are some examples. 
-  The named entity mentions are marked within square brackets:
-  "[about half]", "[hundreds] and [hundreds]", "[one-third]", "[four]", "[exactly 4534.5]".
-  
-  15) EVENT
-  EVENT indicates "Event". This type represents named hurricanes, battles, wars, sports events, attacks, etc. 
-  Metonymic mentions (marked with a ~) of the date or location of an event, or of the organization(s) involved, are included:
-  "the impact of [nine-eleven]" ~ the events of September 11, 2001, "Lincoln's speech after [Gettysburg]" ~ the battle of Gettysburg,
-  "[Enron] has made us all suspicious" ~ the Enron scandal, "[WWII]", "[Hurricane Katrina]", "the [New York City Marathon]".
-  
-  16) WORK_OF_ART
-  WORK_OF_ART indicates "Work of Art". This type represents titles of books, songs, television programs and other creations. 
-  Also includes awards. These are usually surrounded by quotation marks in the article (though the quotations are not included 
-  in the annotation). Newspaper headlines should only be marked if they are referential. In other words the headline of 
-  the article being annotated should not be marked but if in the body of the text here is a reference to an article, then 
-  it is markable as a work of art. Following are some examples. The named entity mentions are marked within square brackets:
-  "[The Empire Strikes Back]", "the [Bible]", "[Blue Moon]", "[Larry King Live]", "[Nobel Peace Prize]", "her [Emmy]", "an [Oscar] nomination".
-  
-  17) LAW
-  LAW indicates "Law". This type represents any document that has been made into a law, including named treaties and sections 
-  and chapters of named legal documents. Following are some examples. The named entity mentions are marked within square brackets:
-  "[IRS code 4]", "the [Johnson Act]", "[Article II of the Constitution]", "the so-called special [301 provision] of the act".
-  
-  18) LANGUAGE
-  LANGUAGE indicates "Language". This type represents any named language. 
-  Following are some examples. The named entity mentions are marked within square brackets:
-  "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
+  conll: >-
+    1) PER
+    PER indicates "Person". These are named persons or family.
+    
+    2) ORG
+    ORG indicates "Organization". These are limited to named corporate, governmental, or other organizational entities.
+    
+    3) LOC
+    LOC indicates "Location". These are the name of politically or geographically defined locations such as cities, provinces, countries, international regions, bodies of water, mountains, etc.
+    
+    4) MISC
+    MISC indicates "Miscellaneous". These include events, nationalities, products and works of art, etc. This type is 
+    used for named entities that do not fit into the other three types. 
 
 instance_template: >-
   task: You are about to read a sentence. Your task is to identify all '{label}' named entities in the sentence.

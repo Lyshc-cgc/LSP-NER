@@ -160,7 +160,7 @@ class Annotation(Label):
             # the more gold spans, the less probability to be sampled
             softmin = torch.nn.Softmin(dim=0)
             probability = softmin(torch.tensor(span_nums, dtype=torch.float32))
-            sampled_idx = torch.topk(probability, k = 2*self.anno_config['k_shot']).indices.tolist()  # the instance indices to be sampled
+            sampled_idx = torch.topk(probability, k = self.anno_config['k_shot']).indices.tolist()  # the instance indices to be sampled
             # get the sampled spans of 'O' class and filter the empty spans
             sampled_idx = list(filter(lambda x: len(spans_o_class[x]) > 0, sampled_idx))
             sampled_idx = sampled_idx[:self.anno_config['k_shot']]  # Get the first k_shot elements
@@ -231,6 +231,41 @@ class Annotation(Label):
                             index += 1
         return self._init_chat_msg_template(examples, use_api=use_api, dataset_name=dataset_name)
 
+    def _mt_fs_msg(self, annotator_cfg, dataset_name, use_api=False) -> list[None | dict[str, str]]:
+        """
+        Init the chat messages for the annotation models to extract entity directly by annotators according the multi_type_prompt.
+        Init examples from the support set sampled from the dataset.
+
+        :param annotator_cfg: The parameters of the annotation model.
+        :param dataset_name: the name of the dataset.
+        :param use_api: whether to use LLM API as annotator
+        :return:
+        """
+        if annotator_cfg['chat']:
+            pass
+        else:
+            examples = ''
+            index = 0
+            k_shot = self.anno_config['k_shot']
+            self.anno_config['support_set_dir'] = self.anno_config['support_set_dir'].format(dataset_name=dataset_name)
+            if self.anno_config['gold_span']:
+                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'gold_span', f'train_support_set_{k_shot}_shot.jsonl')
+            else:
+                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'span', f'train_support_set_{k_shot}_shot.jsonl')
+            with jsonlines.open(k_shot_file) as reader:
+                for line in reader:
+                    sentence = ' '.join((line['tokens']))
+                    output = '['
+                    for start, end, entity_mention, label_id in line['spans_labels']:
+                        label = self.id2label[int(label_id)]
+                        output += f'("{label}", "{entity_mention}"),'
+                    output += ']'
+                    instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
+                    examples += f'{index + 1})\n{instance}\n'
+                    index += 1
+
+        return self._init_chat_msg_template(examples, use_api=use_api, dataset_name=dataset_name)
+
     def _generate_chat_msg(self, instances, chat_msg_template):
         """
         Generate chat messages for each instance. Meanwhile, init the labels for each instance.
@@ -244,11 +279,20 @@ class Annotation(Label):
                 # generate chat message using the single_type_prompt to extract entity directly by annotators
                 sentence = ' '.join(tokens)
                 for label, label_id in self.label2id.items():
+                    if label == 'O':
+                        continue
                     chat_message = copy.deepcopy(chat_msg_template)
                     query = self.anno_config['instance_template'].format(label=label, sentence=sentence, output='')
                     user_prompt = '\n### Query\n' +  query
                     chat_message.append({"role": "user", "content": user_prompt})
-                    yield label_id, chat_message
+                    yield label_id, chat_message, sentence
+            elif 'multi_type_prompt' in self.anno_config.keys() and self.anno_config['multi_type_prompt']:
+                sentence = ' '.join(tokens)
+                chat_message = copy.deepcopy(chat_msg_template)
+                query = self.anno_config['instance_template'].format(sentence=sentence, output='')
+                user_prompt = '\n### Query\n' + query
+                chat_message.append({"role": "user", "content": user_prompt})
+                yield chat_message, sentence
             else:
                 # do not generate chat message given entity
                 for idx, (start, end, entity_mention) in enumerate(spans):
@@ -267,26 +311,28 @@ class Annotation(Label):
                     if self.anno_config['gold_span']:  # use the gold span from the annotation
                         # In this case, entity mentions and gold labels are one-to-one
                         label = spans_labels[idx]
-                        yield span, label, chat_message
+                        yield span, label, chat_message, sentence
 
                     else: # get the span from scratch by spaCy parsers
                         # In this case, entity mention and gold spans with labels are not one-to-one
-                        yield span, chat_message
+                        yield span, chat_message, sentence
 
     @staticmethod
-    def _process_output(output_text, **kwargs):
+    def _process_output(output_text, sentence, **kwargs):
         """
         process the output text to get the label of the entity mention.
         :param output_text: the text output by the annotator model
+        :param sentence: the query sentence
         :param kwargs: other parameters including single_type_prompt, and multi_type_prompt
             single_type_prompt: whether to use the single_type_prompt to extract entity directly by annotators
             multi_type_prompt: whether to use the multi_type_prompt to extract entity directly by annotators
         :return: if the single_type_prompt is True, return the predicted spans and their labels.
         """
+        import ast
 
         output_text = output_text.strip().replace('\_', '_')
 
-        # kwargs['single_type_prompt'] is True, we recognize all entity mention given the type
+        # kwargs['single_type_prompt'] is True, we recognize all entity mention in the output_text given the type
         if 'single_type_prompt' in kwargs.keys() and kwargs['single_type_prompt']:
 
             if 'analysis' in kwargs.keys() and kwargs['analysis']:  # add analysis process in the output
@@ -322,6 +368,22 @@ class Annotation(Label):
                 end = start + span.count(' ') + 1 # end position of the span, excluded
                 out_spans.append((str(start), str(end), span))
 
+            return out_spans
+
+        # kwargs['multi_type_prompt'] is True, we recognize all entity mention in the output_text given multiple types
+        elif 'multi_type_prompt' in kwargs.keys() and kwargs['multi_type_prompt']:
+            out_spans = []
+            pattern = r'\[(.*?)\]'  # the pattern to extract a list string
+            result = re.search(pattern, output_text, re.DOTALL)  # only find the first list string
+            try:
+                tmp_spans = ast.literal_eval(result.group(0).strip())  # tmp_spans shapes like [(type 0, mention0),...]
+                tmp_spans = filter(lambda e: len(e) == 2, tmp_spans)  # filter the invalid spans
+            except Exception:  # the output_text is not valid
+                tmp_spans = []
+
+            for label, mention in tmp_spans:
+                founded_spans = fu.find_span(sentence, mention)
+                out_spans += [(str(start), str(end), span, label) for start, end, span in set(founded_spans)]
             return out_spans
         else:
             json_pattern = [r'\{(.*?)\}', r'\{\{(.*?)\}\}']  # the pattern to extract JSON string
@@ -498,6 +560,9 @@ class Annotation(Label):
                     chat_msg_template = self._st_fs_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
                 else:  # single_type_prompt without few-shot setting
                     chat_msg_template = self._st_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
+            elif 'multi_type_prompt' in self.anno_config.keys() and self.anno_config['multi_type_prompt']:
+                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:
+                    chat_msg_template = self._mt_fs_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
             else:
                 if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:  # 2-stage pipeline with few-shot setting
                     chat_msg_template = self._pipeline_fs_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
@@ -551,32 +616,43 @@ class Annotation(Label):
             output_text = []  # store the output text for each instance
             batch_jobs = []  # store the batch jobs for the batch process, specific for glm batch api
             for batch_id, batch in enumerate(pbar):
-                batch_spans, batch_labels, batch_chats = [], [], []  # store the span, the gold label ids / the gold spans, chat for each batch
+                batch_spans = []  # store the span for each batch
+                batch_labels = []  # store the gold labels for each batch
+                batch_chats = []  # store the chats for each batch
+                batch_sents = []  # store the sentences for each batch
                 batch_res_label_ids = []  # store the output label ids for each batch to evaluate
 
                 # 3.1 store different information according to the different annotation settings
                 if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
-                    # if self.anno_config['single_type_prompt'] is True, batch is a tuple like ((label_0, chat_0), (label_1, chat_1),...)
-                    for label_id, chat in batch:
+                    # if self.anno_config['single_type_prompt'] is True, batch is a tuple like ((label_0, chat_0, sent_0), (label_1, chat_1, sent_1),...)
+                    for label_id, chat, sent in batch:
                         batch_labels.append(label_id)
                         batch_chats.append(chat)
+                        batch_sents.append(sent)
+                elif 'multi_type_prompt' in self.anno_config.keys() and self.anno_config['multi_type_prompt']:
+                    # if self.anno_config['multi_type_prompt'] is True, batch is a tuple like ((chat_0, sent_0), (chat_1, sent_1),...)
+                    for chat, sent in batch:
+                        batch_chats.append(chat)
+                        batch_sents.append(sent)
                 else:
                     if self.anno_config['gold_span']:
                         # if self.anno_config['gold_span'] is true,
-                        # batch is a tuple like ((span_0, label_0, chat_0),(span_1, label_1, chat_1)...)
-                        for span, label, chat in batch:
+                        # batch is a tuple like ((span_0, label_0, chat_0, sent_0),(span_1, label_1, chat_1, sent_1)...)
+                        for span, label, chat, sent in batch:
                             # if self.anno_config['gold_span'] is True, label is the ground truth label id
                             # else, label is the tuple of the ground truth span and its label, like (start, end, gold_mention_span, gold_label_id)
                             batch_spans.append(span)
                             batch_labels.append(label)
                             y_true.append(label)
                             batch_chats.append(chat)
+                            batch_sents.append(sent)
                     else:
                         # else, batch is a tuple like ((span_0, chat_0),(span_1, chat_1)...)
                         # we  get all gold span labels after annotation
-                        for span, chat in batch:
+                        for span, chat, sent in batch:
                             batch_spans.append(span)
                             batch_chats.append(chat)
+                            batch_sents.append(sent)
 
                 # 3.2 get the response of the annotator
                 outputs = None
@@ -608,19 +684,28 @@ class Annotation(Label):
 
                 # 3.3 process directly the output if not using bacth api
                 if outputs:
-                    for out_idx, output in enumerate(outputs):
+                    for out_idx, (output, sent) in enumerate(zip(outputs, batch_sents)):
                         output_text.append(output)
                         if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
                             if 'analysis' in self.anno_config.keys() and self.anno_config['analysis']:
-                                out_spans = self._process_output(output, single_type_prompt=self.anno_config['single_type_prompt'], analysis=self.anno_config['analysis'])
+                                out_spans = self._process_output(output, sent, single_type_prompt=self.anno_config['single_type_prompt'], analysis=self.anno_config['analysis'])
                             else:
-                                out_spans = self._process_output(output, single_type_prompt=self.anno_config['single_type_prompt'])
+                                out_spans = self._process_output(output, sent, single_type_prompt=self.anno_config['single_type_prompt'])
                             if len(out_spans) == 0:
                                 continue
                             out_label_id = batch_labels[out_idx]
                             pred_spans += [(*out_span, str(out_label_id)) for out_span in set(out_spans)]
+                        elif 'multi_type_prompt' in self.anno_config.keys() and self.anno_config['multi_type_prompt']:
+                            out_spans = self._process_output(output, sent, multi_type_prompt=self.anno_config['multi_type_prompt'])
+                            if len(out_spans) == 0:
+                                continue
+                            for start, end, span, label in set(out_spans):
+                                if label not in self.label2id.keys():
+                                    label = 'O'
+                                out_label_id = self.label2id[label]
+                                pred_spans.append((str(start), str(end), span, str(out_label_id)))
                         else:
-                            out_label = self._process_output(output)
+                            out_label = self._process_output(output, sent)
                             if out_label not in self.label2id.keys():
                                 # check if the output label is redundant
                                 tmp_out_label_0 = out_label.split(' ')[0].strip()
@@ -704,6 +789,21 @@ class Annotation(Label):
             pred_spans = [span for span in cache_result['pred_spans'][0] if int(span[-1]) != self.label2id['O']]
             self.evaluate(cache_result['y_true'][0], pred_spans, dataset_name, annotator_name)
         return cache_result
+
+
+    def annotate_augmented(self, dataset, quality=True, **kwargs):
+        """
+        Augmented annotation.
+        1) First, we get candidate entity mentions (denoted as Ec) using constituency parsing.
+        2) Then, we annotate the dataset using multi type prompt. The recognized entity mentions are denoted as 'Er'.
+        3) Third, we filter out candidate entity mentions containing Er from Ec and annotate the remaining entity mentions
+        using pipeline annotation.
+        :param dataset:
+        :param quality:
+        :param kwargs:
+        :return:
+        """
+        # todo
 
     def annotate_by_all(self, dataset, quality=True, **kwargs):
         """
