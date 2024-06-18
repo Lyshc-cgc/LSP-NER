@@ -10,7 +10,7 @@ gold_span: False  # if True, we use gold span from OntoNotes5. If False, we get 
 batch_size: 4096 # batch size for data processing
 split: test  # train, dev, test
 shuffle: True  # whether to shuffle the data
-select: 1000  # select a subset of data. If you want to use all data, set select as 0 or empty
+select: 0  # select a subset of data. If you want to use all data, set select as 0 or empty
 preprocessed_dir: data/{dataset_name}/preprocess  # the directory to store the preprocessed data
 continue: True  # whether to continue to use the data last time
 continue_dir: data/{dataset_name}/continue  # the directory to store the continued data to be annotated

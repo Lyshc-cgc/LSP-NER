@@ -428,8 +428,6 @@ class Processor(Label):
         label_nums = self.statistics(dataset)['label_nums']  # count the number of entities for each label
         label_nums = dict(sorted(label_nums.items(), key=lambda x: x[1], reverse=False))  # sort the labels by the number of entities by ascending order
 
-        # add functional columns
-        dataset = dataset.map(lambda example, index: {"id": index}, with_indices=True)  # add index column
         # add new_tags column
         # original tags is BIO schema, we convert it to the new tags schema where the 'O' tag is 0, 'B-DATE' and 'I-DATE' are the same tag, etc.
         ner_tags_field = self.config['ner_tags_field']
@@ -514,6 +512,8 @@ class Processor(Label):
                                                batch_size=self.config['batch_size'],
                                                num_proc=self.num_proc,
                                                with_rank=with_rank)
+            # add index column
+            preprocessed_dataset = preprocessed_dataset.map(lambda example, index: {"id": index}, with_indices=True)  # add index column
 
             os.makedirs(self.config['preprocessed_dir'], exist_ok=True)
             preprocessed_dataset.save_to_disk(preprocessed_dir)

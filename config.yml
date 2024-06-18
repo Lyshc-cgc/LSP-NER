@@ -35,6 +35,7 @@ anno_cfgs:
   mt_few_shot:
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
+
 # api config
 api_cfg: cfgs/api.yml
 

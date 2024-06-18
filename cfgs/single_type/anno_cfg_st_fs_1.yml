@@ -222,7 +222,7 @@ annotators: # choose annotating model from your cfgs below.
     anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty
     anno_bs: 10  # batch size for this model
-    dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+    dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
     gpu_memory_utilization: 0.8
     stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
 
