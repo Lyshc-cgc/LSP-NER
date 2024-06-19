@@ -132,27 +132,49 @@ class Annotation(Label):
         self.annotators_cfg = self.anno_config['annotators']
         self.annotator_ids = dict()
 
-    def _init_chat_msg_template(self, examples, dataset_name, use_api=False) -> list[None | dict[str, str]]:
+    def _init_chat_msg_template(self, examples, use_api=False) -> list[None | dict[str, str]]:
         """
         Get examples and init the chat messages for the annotation models.
         :param examples: the examples to be shown to annotators.
-        :param dataset_name: the name of the dataset
         :param use_api: whether to use LLM API as annotator
         :return:
         """
         if examples:
-            kwargs = {'examples': examples}
+            examples_prompt = f"Here are some examples to help you understand the task better:\n ### Examples \n {examples}\n"
+            kwargs = {'examples_prompt': examples_prompt}
         else:
             kwargs = dict()
+
+        system_role = ''
         if 'system_role' in self.anno_config.keys() and self.anno_config['system_role']:
-            kwargs.update({'system_role': self.anno_config['system_role']})
+            system_role = self.anno_config['system_role'] + '\n'
+        kwargs.update({'system_role': system_role})
+
+        task_prompt = ''
         if 'task_prompt' in self.anno_config.keys() and self.anno_config['task_prompt']:
-            kwargs.update({'task_prompt': self.anno_config['task_prompt']})
+            task_prompt = self.anno_config['task_prompt']
+            task_prompt = f"Here is your task: \n ### Task \n {task_prompt}\n"
+        kwargs.update({'task_prompt': task_prompt})
+
+        types_prompt = ''
         if 'types_prompt' in self.anno_config.keys() and self.anno_config['types_prompt']:
-            # different dataset uses different types_prompt
-            kwargs.update({'types_prompt': self.anno_config['types_prompt'][dataset_name]})
+            types_string = ''
+            for type_id, type in enumerate(self.labels.keys()):
+                if 'simple_des' in self.anno_config.keys() and self.anno_config['simple_des']:
+                    description = self.labels[type]['description'].split('.')[:2]  # only show the first two sentences
+                    description = ' '.join(description)
+                else:
+                    description = self.labels[type]['description']
+                types_string += '{idx}) {type}\n {description}\n'.format(idx=type_id+1, type=type, description=description)
+            types_prompt = f"Here are types and their descriptions: \n ### Types \n {types_string}\n"
+        kwargs.update({'types_prompt': types_prompt})
+
+        guidelines_prompt = ''
         if 'guidelines' in self.anno_config.keys() and self.anno_config['guidelines']:
-            kwargs.update({'guidelines': self.anno_config['guidelines']})
+            guidelines = self.anno_config['guidelines']
+            guidelines_prompt = f"In your annotation process, please follow these guidelines: \n ### Guidelines \n {guidelines}\n"
+        kwargs.update({'guidelines': guidelines_prompt})
+
         sys_prompt = self.anno_config['prompt_template'].format(**kwargs)
 
         chat_message = [{"role": "system", "content": sys_prompt}]
@@ -181,7 +203,7 @@ class Annotation(Label):
                     examples += f'{idx + 1})\n{instance}\n'
             else:  # 0-shot
                 examples = None
-        return self._init_chat_msg_template(examples, use_api=use_api, dataset_name=dataset_name)
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
     def _st_msg(self, annotator_cfg, dataset_name, use_api=False) -> list[None | dict[str, str]]:
         """
@@ -204,7 +226,7 @@ class Annotation(Label):
                     examples += f'{idx + 1})\n{instance}\n'
             else:   # 0-shot
                 examples = None
-        return self._init_chat_msg_template(examples, use_api=use_api, dataset_name=dataset_name)
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
     def _pipeline_fs_msg(self, annotator_cfg, dataset_name, use_api=False) -> list[None | dict[str, str]]:
         """
@@ -275,7 +297,7 @@ class Annotation(Label):
                         examples += f'{index + 1})\n{instance}\n'
                         index += 1
 
-        return self._init_chat_msg_template(examples, use_api=use_api, dataset_name=dataset_name)
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
     def _st_fs_msg(self, annotator_cfg, dataset_name, use_api=False) -> list[None | dict[str, str]]:
         """
@@ -329,7 +351,7 @@ class Annotation(Label):
                             instance = self.anno_config['instance_template'].format(label=label, sentence=sent, output=output)
                             examples += f'{index + 1})\n{instance}\n'
                             index += 1
-        return self._init_chat_msg_template(examples, use_api=use_api, dataset_name=dataset_name)
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
     def _mt_fs_msg(self, annotator_cfg, dataset_name, use_api=False) -> list[None | dict[str, str]]:
         """
@@ -364,7 +386,7 @@ class Annotation(Label):
                     examples += f'{index + 1})\n{instance}\n'
                     index += 1
 
-        return self._init_chat_msg_template(examples, use_api=use_api, dataset_name=dataset_name)
+        return self._init_chat_msg_template(examples, use_api=use_api)
 
     def _generate_chat_msg(self, instances, chat_msg_template):
         """
@@ -923,11 +945,11 @@ class Annotation(Label):
         # 6. evaluation
         if kwargs['eval']:
             if self.anno_config['gold_span']:
-                self.evaluate(cache_result['y_true'], cache_result['label_ids'], dataset_name, annotator_name)
+                self.evaluate(cache_result['y_true'], cache_result['label_ids'], dataset_name=dataset_name, annotator_name=annotator_name, prompt_type=kwargs['prompt_type'])
             else:
                 # remove the '0'('O' label) span from the pred_spans
                 pred_spans = [span for span in cache_result['pred_spans'][0] if int(span[-1]) != self.label2id['O']]
-                self.evaluate(cache_result['y_true'][0], pred_spans, dataset_name, annotator_name)
+                self.evaluate(cache_result['y_true'][0], pred_spans, dataset_name=dataset_name, annotator_name=annotator_name, prompt_type=kwargs['prompt_type'])
 
         os.kill(os.getpid(), signal.SIGKILL)  # kill itself to release the GPU memory
 
@@ -1016,7 +1038,7 @@ class Annotation(Label):
             res_cache_dir = os.path.join(eval_dir, 'span', kwargs['prompt_type'])
 
         if not os.path.exists(res_cache_dir):
-            os.makedirs(res_cache_dir, exist_ok=True)
+            os.makedirs(res_cache_dir)
         res_file = os.path.join(res_cache_dir, '{}_res.txt'.format(kwargs['annotator_name']))
         with open(res_file, 'w') as f:
             for metric, res in eval_results.items():

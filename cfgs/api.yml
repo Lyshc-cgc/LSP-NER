@@ -22,7 +22,7 @@ glm:
 gpt:
   base_url: https://fastapi.top/v1
 #  base_url: https://api.chatgpt-3.vip/v1
-  model: gpt-3.5-turbo-instruct # gpt-3.5-turbo(gpt-3.5-turbo-0125), gpt-4o
+  model: gpt-3.5-turbo # gpt-3.5-turbo(gpt-3.5-turbo-0125), gpt-3.5-turbo-instruct
   api_key: OPENAI_API_KEY  # the os environment variable name
   batch_api: False  # whether to use the bacth api
 

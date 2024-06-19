@@ -4,24 +4,14 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
+simple_des: False  # whether to use simple type description
 
 prompt_template: >-
   {system_role}
-  Here is your task:
-  ### Task
   {task_prompt}
-  
-  Here are types and their descriptions:
-  ### Types
   {types_prompt}
-  
-  In your annotation process, please follow these guidelines:
-  ### Guidelines
   {guidelines}
-  
-  Here are some examples to help you understand the task better:
-  ### Examples
-  {examples}
+  {examples_prompt}
 
 # for chat model using chat template
 prompt_template_chat: >-

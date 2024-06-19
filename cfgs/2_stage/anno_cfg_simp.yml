@@ -5,20 +5,14 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
+simple_des: True  # whether to use simple type description
 
 prompt_template: >-
   {system_role}
-  Here is your task:
-  ### Task
   {task_prompt}
-  
-  Here are types and their descriptions:
-  ### Types
   {types_prompt}
-
-  Here are some examples to help you understand the task better:
-  ### Examples
-  {examples}
+  {guidelines}
+  {examples_prompt}
 
 # for chat model using chat template
 prompt_template_chat: >-
@@ -42,92 +36,7 @@ task_prompt: >-
   If there is no suitable type, you can choose 'O' as answer.
   The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
 
-types_prompt:
-  ontonotes: >-
-    1) PERSON
-      PERSON indicates "Person Name". These are proper names of people, including fictional people, first names, last names, 
-      individual or family names, unique nicknames.
-
-      2) NORP
-      NORP indicates "Nationality, Other, Religion, Political". This type represents adjectival forms of GPE and Location names, 
-      as well as adjectival forms of named religions, heritage and political affiliation.
-
-      3) FAC
-      FAC indicates "Facility". Names of man-made structures: infrastructure (streets, bridges), buildings, monuments, etc. 
-      belong to this type.
-
-      4) ORG
-      ORG indicates "Organization". These are names of companies, government agencies, educational institutions, sport teams. 
-
-      5) GPE
-      GPE indicates "Geographical/Social/Political Entity". This type represents names of countries, cities, states, provinces, 
-      municipalities.
-
-      6) LOC
-      LOC indicates "Location". This type represents Names of geographical locations other than GPEs. 
-      These include mountain ranges, coasts, borders, planets, geo-coordinates, bodies of water. 
-
-      7) PRODUCT
-      PRODUCT indicates "Product". This can be name of any product, generally a model name or model name and number.  Named 
-      foods are also included.
-
-      8) DATE
-      DATE indicates "Date". This type used to classify a reference to a date or period, etc. 
-
-      9) TIME
-      TIME indicates "Time". This type represents Any time ending with "a.m." or "p.m." If the "a.m." or "p.m." is explicit, 
-      it must be tagged along with the numbers. 
-
-      10) PERCENT
-      PERCENT indicates "Percent". This type represents any percentage.
-
-      11) MONEY
-      MONEY indicates "Money". This type represents any monetary value including all monetary denominations. 
-
-      12) QUANTITY
-      QUANTITY indicates "Quantity". This type used to classify measurements with standardized units. 
-
-      13) ORDINAL
-      ORDINAL indicates "Ordinal". This type represents all ordinal numbers, including adverbials. 
-
-      14) CARDINAL
-      CARDINAL indicates 'Cardinal'. This type represents numerals, including whole numbers, fractions, and decimals, that provide 
-      a count or quantity and do not fall under a unit of measurement, money, percent, date or time.
-
-      15) EVENT
-      EVENT indicates "Event". This type represents named hurricanes, battles, wars, sports events, attacks, etc. 
-
-      16) WORK_OF_ART
-      WORK_OF_ART indicates "Work of Art". This type represents titles of books, songs, television programs and other creations. 
-      Also includes awards.
-
-      17) LAW
-      LAW indicates "Law". This type represents any document that has been made into a law, including named treaties and sections 
-      and chapters of named legal documents. 
-
-      18) LANGUAGE
-      LANGUAGE indicates "Language". This type represents any named language.
-    
-      19) O
-      O indicates "Other". These are named entities that do not fit into the other types.
-
-  conll: >-
-    1) PER
-    PER indicates "Person". These are named persons or family.
-    
-    2) ORG
-    ORG indicates "Organization". These are limited to named corporate, governmental, or other organizational entities.
-    
-    3) LOC
-    LOC indicates "Location". These are the name of politically or geographically defined locations such as cities, provinces, countries, international regions, bodies of water, mountains, etc.
-    
-    4) MISC
-    MISC indicates "Miscellaneous". These include events, nationalities, products and works of art, etc. This type is 
-    used for named entities that do not fit into the other three types. 
-    
-    5) O
-    O indicates "Other". These are named entities that do not fit into the other types.
-
+types_prompt: True
 
 instance_template: >-
   sentence: "{sentence}"
