@@ -1,11 +1,11 @@
 import os
-import re
 import copy
 import random
 
 import jsonlines
 import multiprocess
 import module.func_util as fu
+from tqdm import tqdm
 from datasets import load_dataset, load_from_disk
 from module.label import Label
 
@@ -17,6 +17,7 @@ class Processor(Label):
         super().__init__(labels_cfg)
         self.config = data_cfg
         self.num_proc = self.config['num_proc']
+        self.natural_flag = 'natural' if labels_cfg['natural'] else 'bio'  # use natural labels or bio labels
 
     @staticmethod
     def _modify_spacy_tokenizer(nlp):
@@ -363,7 +364,7 @@ class Processor(Label):
             'tokens': instances[tokens_filed],
             'tags': instances[ner_tags_field],
             'spans': res_spans,  # the spans of the instances, predicted by the spaCy parser, shape like (start, end, mention_span)
-            'spans_labels': res_spans_labels,  # store the gold spans and labels of the instances, shape like (start, end, gold_mention_span, gold_label)
+            'spans_labels': res_spans_labels,  # store the gold spans and labels of the instances, shape like (start, end, gold_mention_span, gold_label_id)
             'expand_spans_labels': res_ex_spans_labels,   # store the expanded gold spans and labels, shape like (start, end, expanded_gold_mention_span, expanded_gold_label_id)
             'spa_cons_string': res_spa_cons_string,  # constituency parse tree of the instances, predicted by the spaCy parser
         }
@@ -461,7 +462,7 @@ class Processor(Label):
 
         # 3. remove redundant instance
         raw_support_set = copy.deepcopy(support_set)
-        for idx in raw_support_set:
+        for idx in tqdm(raw_support_set, desc='removing redundant instance'):
             tmp_support_set = copy.deepcopy(support_set)  # cache before removing instance idx
             support_set.remove(idx)
             counter = _update_counter(support_set, counter)
@@ -483,18 +484,18 @@ class Processor(Label):
             preprocessed_dir = os.path.join(self.config['preprocessed_dir'], 'gold_span')  # the directory to store the formatted dataset
             process_func = self.data_format_gold
             with_rank = False
-            continue_dir = os.path.join(self.config['continue_dir'], 'gold_span')  # the directory to store the continued data to be annotated
-            ss_cache_dir = os.path.join(self.config['ss_cache_dir'], 'gold_span')  # the directory to cache the support set
+            continue_dir = os.path.join(self.config['continue_dir'], f'gold_span_{self.natural_flag}')  # the directory to store the continued data to be annotated
+            ss_cache_dir = os.path.join(self.config['ss_cache_dir'], f'gold_span_{self.natural_flag}')  # the directory to cache the support set
         else:
-            preprocessed_dir = os.path.join(self.config['preprocessed_dir'], 'span')
+            preprocessed_dir = os.path.join(self.config['preprocessed_dir'], f'span_{self.natural_flag}')
             process_func = self.data_format_span
             # with_rank is used to determine whether to assign a value to the rank parameter in the map function
             # we use rank number to specify the GPU device to be used by spaCy in the different processing
             with_rank = True
             # batch_size = self.config['batch_num_per_device'] * self.config['batch_size_per_device']
-            continue_dir = os.path.join(self.config['continue_dir'], 'span')  # the directory to store the continued data to be annotated
-            quality_res_dir = os.path.join(self.config['eval_dir'], 'span')  # the directory to store the quality evaluation results
-            ss_cache_dir = os.path.join(self.config['ss_cache_dir'], 'span')  # the directory to cache the support set
+            continue_dir = os.path.join(self.config['continue_dir'], f'span_{self.natural_flag}')  # the directory to store the continued data to be annotated
+            quality_res_dir = os.path.join(self.config['eval_dir'], f'span_{self.natural_flag}')  # the directory to store the quality evaluation results
+            ss_cache_dir = os.path.join(self.config['ss_cache_dir'], f'span_{self.natural_flag}')  # the directory to cache the support set
 
         # set 'spawn' start method in the main process to parallelize computation across several GPUs when using multi-processes in the map function
         # refer to https://huggingface.co/docs/datasets/process#map

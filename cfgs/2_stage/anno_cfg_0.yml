@@ -1,13 +1,11 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: mt-1-shot-00  # the name of the configuration
+name: raw-0-shot
 cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
-support_set_dir: data/{dataset_name}/support_set  # support set directory
-k_shot: 1  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
-multi_type_prompt: True  # if True, we use multi-type prompt. If False, we use single-type prompt.
 simple_des: False  # whether to use simple type description
+k_shot: 0
 
 prompt_template: >-
   {system_role}
@@ -16,12 +14,27 @@ prompt_template: >-
   {guidelines}
   {examples_prompt}
 
+# for chat model using chat template
+prompt_template_chat: >-
+  {system_role}
+  Here is your task:
+  ### Task
+  {task_prompt}
+  
+  Here are types and their descriptions:
+  ### Types
+  {types_prompt}
+
 system_role: >-
   You are a professional and helpful crowdsourcing data annotator using English with the help of description of types.
 
 task_prompt: >-
-  Identify the entities and recognize their types in the sentence.
-  The output should be a string in the format of the tuple list,  like'[(type 0, entity 0), (type 1, entity 1), ...]'.
+  You are about to read a sentence with an entity mention marked with square brackets (i.e, '[' and ']'), 
+  where '[' refers to the start of the entity mention and ']' refers to the end of the entity mention.
+  First, you need to determine if the mention is a special named entity instead of a common noun phrase.
+  Then, you should annotate the given entity mention using the provided types.
+  If there is no suitable type, you can choose 'O' as answer.
+  The output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
 
 types_prompt: True
 instance_template: >-
@@ -62,11 +75,11 @@ annotators: # choose annotating model from your cfgs below.
     # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
     anno_temperature: 0.05  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
     anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
+    anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty
     anno_bs: 20  # batch size for this model
     dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-    gpu_memory_utilization: 0.8
+    gpu_memory_utilization: 0.9
     stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
 
 #  -

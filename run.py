@@ -5,7 +5,7 @@ from module.func_util import get_config
 def main():
     config = get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'ontonotes'  # 'conll', 'ontonotes'
+    dataset_name = 'conll'  # 'conll', 'ontonotes'
     assert dataset_name in config['data_cfgs'].keys() # ('conll', 'ontonotes')
 
     data_cfg = get_config(config['data_cfgs'][dataset_name])
@@ -24,7 +24,7 @@ def main():
     prompt_type = 'mt_few_shot'
     augmented = False
     if not augmented:
-        dataset = dataset.shuffle(42).select(range(100))
+        dataset = dataset.shuffle().select(range(200))
         assert prompt_type in ('raw', 'single_type', 'mt_few_shot', 'few_shot', 'st_few_shot')
         anno_cfg_paths = config['anno_cfgs'][prompt_type]
 

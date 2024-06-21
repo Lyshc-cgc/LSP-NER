@@ -1,9 +1,11 @@
+
 ontonotes:
+  natural: False  # whether to use natural-format labels
   labels:
     PERSON:
       natural: Person
       description: >-
-        PERSON indicates "Person Name". These are proper names of people, including fictional people, first names, last names, 
+        indicates "Person Name". These are proper names of people, including fictional people, first names, last names, 
         individual or family names, unique nicknames. Generational markers (Jr., IV) are included in the extent, while 
         honorifics (Ms., Dr.) and occupational titles (President, Secretary) are NOT included.
         Following are some examples. The named entity mentions are marked within square brackets:
@@ -11,7 +13,7 @@ ontonotes:
     NORP:
       natural: Nationality, Other, Religion, Political
       description: >-
-        NORP indicates "Nationality, Other, Religion, Political". This type represents adjectival forms of GPE and Location names, 
+        indicates "Nationality, Other, Religion, Political". This type represents adjectival forms of GPE and Location names, 
         as well as adjectival forms of named religions, heritage and political affiliation. Also marked are head words which 
         refer to people using the name of an entity with which they are affiliated, often a GPE or Organization. 
         The distinction between NORP and other types is morphological. "American" and "Americans" are adjectival nationalities, 
@@ -22,7 +24,7 @@ ontonotes:
     FAC:
       natural: Facility
       description: >-
-        FAC indicates "Facility". Names of man-made structures: infrastructure (streets, bridges), buildings, monuments, etc. 
+        indicates "Facility". Names of man-made structures: infrastructure (streets, bridges), buildings, monuments, etc. 
         belong to this type. Buildings that are referred to using the name of the company or organization that uses them 
         should be marked as FAC when they refer to the physical structure of the building itself, usually in a locative way: 
         "I'm reporting live from right outside [Massachusetts General Hospital]". 
@@ -31,7 +33,7 @@ ontonotes:
     ORG:
       natural: Organization
       description: >-
-        ORG indicates "Organization". These are names of companies, government agencies, educational institutions, sport teams. 
+        indicates "Organization". These are names of companies, government agencies, educational institutions, sport teams. 
         Names of hospitals, museums, and libraries should be marked, unless the mentions are clearly referring to the building 
         in a locative way. Adjectival forms of organization names are included, as are metonymic mentions of the buildings or 
         locations associated with these organizations. A group, team, force, etc. must be officially sanctioned in some way to 
@@ -42,7 +44,7 @@ ontonotes:
     GPE:
       natural: Geo-Political Entity
       description: >-
-        GPE indicates "Geographical/Social/Political Entity". This type represents names of countries, cities, states, provinces,
+        indicates "Geographical/Social/Political Entity". This type represents names of countries, cities, states, provinces,
         municipalities. In cases where the GPE name is modified, such as "southern California," [California] is marked as a GPE
         name and there is NO other markup. Following are some examples. The named entity mentions are marked within square brackets:
         "the south of [Baghdad]", "[Busan], [South Korea]", "[Moscow]", "[Taiwan]".
@@ -50,7 +52,7 @@ ontonotes:
     LOC:
       natural: Location
       description: >-
-        LOC indicates "Location". This type represents Names of geographical locations other than GPEs. 
+        indicates "Location". This type represents Names of geographical locations other than GPEs. 
         These include mountain ranges, coasts, borders, planets, geo-coordinates, bodies of water. 
         Also included in this category are named regions such as the Middle East, areas, neighborhoods, continents and regions 
         of continents. Do NOT mark deictics or other non-proper nouns: here, there, everywhere, etc. 
@@ -61,7 +63,7 @@ ontonotes:
     PRODUCT:
       natural: Product
       description: >-
-        PRODUCT indicates "Product". This can be name of any product, generally a model name or model name and number.  Named 
+        indicates "Product". This can be name of any product, generally a model name or model name and number.  Named 
         foods are also included. Credit cards, checking accounts, CDs, and credit plans are NOT marked. References that include 
         manufacturer and product should be marked as two separate named entities, ORG + PRODUCT: [Apple] [iPod], [Dell] [Inspiron], 
         [Ford] [Mustang]. Following are some examples. The named entity mentions are marked within square brackets:
@@ -69,7 +71,7 @@ ontonotes:
     DATE:
       natural: Date
       description: >-
-        DATE indicates "Date". This type used to classify a reference to a date or period, etc. Age also falls under this 
+        indicates "Date". This type used to classify a reference to a date or period, etc. Age also falls under this 
         category, even when it’s a noun phrase referring to a person: the 5-year-old, 5 years old, Jane Doe, 5, etc. Extent 
         should include modifiers & prepositions that denote specific time, such as [2 days ago], [the past two days], but not 
         those that mark duration, such as "for [2 days]." Do not separate mentions into their component parts: [November 2, 2001] 
@@ -81,7 +83,7 @@ ontonotes:
     TIME:
       natural: Time
       description: >-
-        TIME indicates "Time". This type represents Any time ending with "a.m." or "p.m." If the "a.m." or "p.m." is explicit, 
+        indicates "Time". This type represents Any time ending with "a.m." or "p.m." If the "a.m." or "p.m." is explicit, 
         it must be tagged along with the numbers. Other times of day (units smaller than a day) and time durations less than 24 
         hours are also marked: morning, noon, night, 3 hours, a minute. Do not separate mentions into their component parts: 
         [the evening of July 4th] and [5:00am, April 5, 2008] should be marked in their entirety, without separate markups for 
@@ -91,14 +93,14 @@ ontonotes:
     PERCENT:
       natural: Percentage
       description: >-
-        PERCENT indicates "Percent". This type represents any percentage. A percent symbol or the actual word percent must be 
+        indicates "Percent". This type represents any percentage. A percent symbol or the actual word percent must be 
         explicit and included in the extent. If the percent is implicit, the number should be marked CARDINAL. Following are some 
         examples. The named entity mentions are marked within square brackets:
         "[50%]", "[a hundred and twenty percent]".
     MONEY:
       natural: Money
       description: >-
-        MONEY indicates "Money". This type represents any monetary value including all monetary denominations. The monetary unit 
+        indicates "Money". This type represents any monetary value including all monetary denominations. The monetary unit 
         must be explicit and included in the extent. If the monetary unit is implicit, the number should be marked CARDINAL. 
         Only values should be tagged—generic references to money should not. For example, in "money invested overseas," there 
         is no markup for "money." In rate expressions such as "$ per unit," the unit should not be included in the extent. 
@@ -108,7 +110,7 @@ ontonotes:
     QUANTITY:
       natural: Quantity
       description: >-
-        QUANTITY indicates "Quantity". This type used to classify measurements with standardized units. If the unit of measurement 
+        indicates "Quantity". This type used to classify measurements with standardized units. If the unit of measurement 
         is implicit or non-standard (3 handfuls, 2 football fields, 10 points), the number should be marked CARDINAL. One exception 
         to this rule is formulaic references to the age, height, and weight of a person: Joe Smith, 44, five ten, two twenty. 
         In this instance, [five ten] and [two twenty] should be marked QUANTITY. (While [44] should be marked DATE).
@@ -117,13 +119,13 @@ ontonotes:
     ORDINAL:
       natural: Ordinal number
       description: >-
-        ORDINAL indicates "Ordinal". This type represents all ordinal numbers, including adverbials. 
+        indicates "Ordinal". This type represents all ordinal numbers, including adverbials. 
         Following are some examples. The named entity mentions are marked within square brackets:
         "in the [first] place", "[third] in line", "[fourth] place", "[secondly]".
     CARDINAL:
       natural: Cardinal number
       description: >-
-        CARDINAL indicates 'Cardinal'. This type represents numerals, including whole numbers, fractions, and decimals, that provide 
+        indicates 'Cardinal'. This type represents numerals, including whole numbers, fractions, and decimals, that provide 
         a count or quantity and do not fall under a unit of measurement, money, percent, date or time. For "Nasdaq composite 
         fill [1.39] to [451.37]." the numbers are marked CARDINAL because there is no monetary unit. Headless numerical phrases 
         are also covered in this category: "reducing employment from [18,000] to [16,000]." Numbers identifying list items should 
@@ -134,7 +136,7 @@ ontonotes:
     EVENT:
       natural: Event
       description: >-
-        EVENT indicates "Event". This type represents named hurricanes, battles, wars, sports events, attacks, etc. 
+        indicates "Event". This type represents named hurricanes, battles, wars, sports events, attacks, etc. 
         Metonymic mentions (marked with a ~) of the date or location of an event, or of the organization(s) involved, are included:
         "the impact of [nine-eleven]" ~ the events of September 11, 2001, "Lincoln's speech after [Gettysburg]" ~ the battle of Gettysburg,
         "[Enron] has made us all suspicious" ~ the Enron scandal, "[WWII]", "[Hurricane Katrina]", "the [New York City Marathon]".
@@ -142,7 +144,7 @@ ontonotes:
     WORK_OF_ART:
       natural: Work of art
       description: >-
-        EVENT indicates "Event". This type represents named hurricanes, battles, wars, sports events, attacks, etc. 
+        indicates "Event". This type represents named hurricanes, battles, wars, sports events, attacks, etc. 
         Metonymic mentions (marked with a ~) of the date or location of an event, or of the organization(s) involved, are included:
         "the impact of [nine-eleven]" ~ the events of September 11, 2001, "Lincoln's speech after [Gettysburg]" ~ the battle of Gettysburg,
         "[Enron] has made us all suspicious" ~ the Enron scandal, "[WWII]", "[Hurricane Katrina]", "the [New York City Marathon]".
@@ -150,14 +152,14 @@ ontonotes:
     LAW:
       natural: Law
       description: >-
-        LAW indicates "Law". This type represents any document that has been made into a law, including named treaties and sections 
+        indicates "Law". This type represents any document that has been made into a law, including named treaties and sections 
         and chapters of named legal documents. Following are some examples. The named entity mentions are marked within square brackets:
         "[IRS code 4]", "the [Johnson Act]", "[Article II of the Constitution]", "the so-called special [301 provision] of the act".
 
     LANGUAGE:
       natural: Language
       description: >-
-        LANGUAGE indicates "Language". This type represents any named language. 
+        indicates "Language". This type represents any named language. 
         Following are some examples. The named entity mentions are marked within square brackets:
         "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
     
@@ -203,6 +205,7 @@ ontonotes:
     I-LANGUAGE: 36
 
 conll:
+  natural: False  # whether to use natural-format labels
   labels:
     PER:
       natural: Person

@@ -6,7 +6,7 @@ data_cfgs:
 # annotation config
 anno_cfgs:
   raw:  # LLM classify the given entities, 2-stage pipeline
-#    - cfgs/2_stage/anno_cfg_0.yml
+    - cfgs/2_stage/anno_cfg_0.yml
     - cfgs/2_stage/anno_cfg_simp.yml
     - cfgs/2_stage/anno_cfg.yml
 #    - cfgs/2_stage/anno_cfg_20.yml
@@ -33,6 +33,7 @@ anno_cfgs:
     - cfgs/single_type/anno_cfg_st_fs_1.yml
     - cfgs/single_type/anno_cfg_st_fs_1_simp.yml
   mt_few_shot:
+    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
 

@@ -99,8 +99,15 @@ def compute_span_f1(gold_spans, pred_spans):
     # these entities are not predicted.
     false_negative += len(gold_spans)
 
-    recall = true_positive / (true_positive + false_negative)
-    precision = true_positive / (true_positive + false_positive)
+    if true_positive + false_negative == 0:
+        recall = 0
+    else:
+        recall = true_positive / (true_positive + false_negative)
+    if true_positive + false_positive == 0:
+        precision = 0
+    else:
+        precision = true_positive / (true_positive + false_positive)
+
     if recall + precision == 0:
         f1 = 0
     else:

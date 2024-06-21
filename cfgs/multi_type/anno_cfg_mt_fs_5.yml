@@ -1,5 +1,5 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: mt-5-shot  # the name of the configuration
+name: mt-5-shot-00  # the name of the configuration
 cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
@@ -66,7 +66,7 @@ annotators: # choose annotating model from your cfgs below.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty
     anno_bs: 20  # batch size for this model
     dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-    gpu_memory_utilization: 0.9
+    gpu_memory_utilization: 0.8
     stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
 
 #  -

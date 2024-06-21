@@ -10,6 +10,7 @@ import jsonlines
 import wandb
 import torch
 import numpy as np
+from tenacity import retry, retry_if_exception_type, wait_random
 from zhipuai import ZhipuAI
 from openai import OpenAI, AsyncOpenAI
 from datasets import load_from_disk, Dataset, load_dataset
@@ -113,7 +114,7 @@ def annotate_augmented(type_fs_cfg, raw_cfg, api_cfg, labels_cfg, dataset, **kwa
     eval_dir = os.path.join(eval_dir, 'augmented')
 
     if not os.path.exists(eval_dir):
-        os.makedirs(eval_dir, exist_ok=True)
+        os.makedirs(eval_dir)
 
     res_file = os.path.join(eval_dir, 'aug-{}-{}_res.txt'.format(type_fs_cfg['name'], raw_cfg['name']))
     with open(res_file, 'w') as f:
@@ -124,13 +125,14 @@ class Annotation(Label):
     """
     The Annotation class is used to annotate the data.
     """
-    def __init__(self, anno_cfg, api_cfg, labels_cfg):
+    def __init__(self, anno_cfg, api_cfg, labels_cfg, natural=False):
         super().__init__(labels_cfg)
         self.anno_config = anno_cfg
         self.api_cfg = api_cfg if api_cfg else None
         self.use_api = True if api_cfg else False
         self.annotators_cfg = self.anno_config['annotators']
         self.annotator_ids = dict()
+        self.natural_flag = 'natural' if labels_cfg['natural'] else 'bio'  # use natural labels or bio labels
 
     def _init_chat_msg_template(self, examples, use_api=False) -> list[None | dict[str, str]]:
         """
@@ -143,7 +145,7 @@ class Annotation(Label):
             examples_prompt = f"Here are some examples to help you understand the task better:\n ### Examples \n {examples}\n"
             kwargs = {'examples_prompt': examples_prompt}
         else:
-            kwargs = dict()
+            kwargs = {'examples_prompt': ''}
 
         system_role = ''
         if 'system_role' in self.anno_config.keys() and self.anno_config['system_role']:
@@ -160,12 +162,17 @@ class Annotation(Label):
         if 'types_prompt' in self.anno_config.keys() and self.anno_config['types_prompt']:
             types_string = ''
             for type_id, type in enumerate(self.labels.keys()):
+                if self.natural_flag == 'natural':  # use natual format
+                    type_string = self.labels[type]['natural']
+                else:
+                    type_string = type
                 if 'simple_des' in self.anno_config.keys() and self.anno_config['simple_des']:
                     description = self.labels[type]['description'].split('.')[:2]  # only show the first two sentences
                     description = ' '.join(description)
                 else:
                     description = self.labels[type]['description']
-                types_string += '{idx}) {type}\n {description}\n'.format(idx=type_id+1, type=type, description=description)
+                description = type_string + ' ' + description
+                types_string += '{idx}) {type}\n {description}\n'.format(idx=type_id+1, type=type_string, description=description)
             types_prompt = f"Here are types and their descriptions: \n ### Types \n {types_string}\n"
         kwargs.update({'types_prompt': types_prompt})
 
@@ -241,7 +248,7 @@ class Annotation(Label):
         if annotator_cfg['chat']:
             pass
         else:
-            examples = ''
+            examples = None
             spans_o_class = []  # store the spans of 'O' class
             span_nums = []  # count the number of gold spans for each example
 
@@ -249,53 +256,55 @@ class Annotation(Label):
             # 1. for Non-O class
             # k-shot examples to show to the annotator
             k_shot = self.anno_config['k_shot']
-            self.anno_config['support_set_dir'] = self.anno_config['support_set_dir'].format(dataset_name=dataset_name)
-            if self.anno_config['gold_span']:
-                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'gold_span', f'train_support_set_{k_shot}_shot.jsonl')
-            else:
-                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'span', f'train_support_set_{k_shot}_shot.jsonl')
-            with jsonlines.open(k_shot_file) as reader:
-                for line in reader:
-                    span_nums.append(len(line['spans_labels']))
-                    spans = set()  # store the spans parsed by parsers
-                    gold_spans = set()  # store the gold spans
-                    for start, end, entity_mention, label_id in line['spans_labels']:
-                        gold_spans.add((start, end, entity_mention))
-                        # gold_span is a tuple like (start, end, gold_mention_span, gold_label)
-                        start, end = int(start), int(end)
-                        sentence = ' '.join(line['tokens'][:start] + ['[ ', entity_mention, ' ]'] + line['tokens'][end:])
+            if k_shot != 0:
+                examples = ''
+                self.anno_config['support_set_dir'] = self.anno_config['support_set_dir'].format(dataset_name=dataset_name)
+                if self.anno_config['gold_span']:
+                    k_shot_file = os.path.join(self.anno_config['support_set_dir'], f'gold_span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                else:
+                    k_shot_file = os.path.join(self.anno_config['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                with jsonlines.open(k_shot_file) as reader:
+                    for line in reader:
+                        span_nums.append(len(line['spans_labels']))
+                        spans = set()  # store the spans parsed by parsers
+                        gold_spans = set()  # store the gold spans
+                        for start, end, entity_mention, label_id in line['spans_labels']:
+                            gold_spans.add((start, end, entity_mention))
+                            # gold_span is a tuple like (start, end, gold_mention_span, gold_label)
+                            start, end = int(start), int(end)
+                            sentence = ' '.join(line['tokens'][:start] + ['[ ', entity_mention, ' ]'] + line['tokens'][end:])
 
-                        label = self.id2label[int(label_id)]
-                        output = f'{{"answer": "{label}"}}'
-                        instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
-                        examples += f'{index + 1})\n{instance}\n'
-                        index += 1
+                            label = self.id2label[int(label_id)]
+                            output = f'{{"answer": "{label}"}}'
+                            instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
+                            examples += f'{index + 1})\n{instance}\n'
+                            index += 1
 
-                    for start, end, entity_mention in line['spans']:
-                        spans.add((start, end, entity_mention))
+                        for start, end, entity_mention in line['spans']:
+                            spans.add((start, end, entity_mention))
 
-                    # add examples of 'O' class
-                    spans_o_class.append(spans - gold_spans)
+                        # add examples of 'O' class
+                        spans_o_class.append(spans - gold_spans)
 
-            # 2. for 'O' class
-            # sample the examples of 'O' class according to the number of gold spans
-            # the more gold spans, the less probability to be sampled
-            softmin = torch.nn.Softmin(dim=0)
-            probability = softmin(torch.tensor(span_nums, dtype=torch.float32))
-            sampled_idx = torch.topk(probability, k = self.anno_config['k_shot']).indices.tolist()  # the instance indices to be sampled
-            # get the sampled spans of 'O' class and filter the empty spans
-            sampled_idx = list(filter(lambda x: len(spans_o_class[x]) > 0, sampled_idx))
-            sampled_idx = sampled_idx[:self.anno_config['k_shot']]  # Get the first k_shot elements
-            with jsonlines.open(k_shot_file) as reader:
-                for idx, line in enumerate(reader):
-                    if idx in sampled_idx:
-                        start, end, entity_mention = random.choice(list(spans_o_class[idx]))  # randomly select a span in this instance
-                        start, end = int(start), int(end)
-                        sentence = ' '.join(line['tokens'][:start] + ['[ ', entity_mention, ' ]'] + line['tokens'][end:])
-                        output = '{"answer": "O"}'
-                        instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
-                        examples += f'{index + 1})\n{instance}\n'
-                        index += 1
+                # 2. for 'O' class
+                # sample the examples of 'O' class according to the number of gold spans
+                # the more gold spans, the less probability to be sampled
+                softmin = torch.nn.Softmin(dim=0)
+                probability = softmin(torch.tensor(span_nums, dtype=torch.float32))
+                sampled_idx = torch.topk(probability, k = self.anno_config['k_shot']).indices.tolist()  # the instance indices to be sampled
+                # get the sampled spans of 'O' class and filter the empty spans
+                sampled_idx = list(filter(lambda x: len(spans_o_class[x]) > 0, sampled_idx))
+                sampled_idx = sampled_idx[:self.anno_config['k_shot']]  # Get the first k_shot elements
+                with jsonlines.open(k_shot_file) as reader:
+                    for idx, line in enumerate(reader):
+                        if idx in sampled_idx:
+                            start, end, entity_mention = random.choice(list(spans_o_class[idx]))  # randomly select a span in this instance
+                            start, end = int(start), int(end)
+                            sentence = ' '.join(line['tokens'][:start] + ['[ ', entity_mention, ' ]'] + line['tokens'][end:])
+                            output = '{"answer": "O"}'
+                            instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
+                            examples += f'{index + 1})\n{instance}\n'
+                            index += 1
 
         return self._init_chat_msg_template(examples, use_api=use_api)
 
@@ -312,45 +321,47 @@ class Annotation(Label):
         if annotator_cfg['chat']:
             pass
         else:
-            examples = ''
+            examples = None
             index = 0  # index of the examples
             k_shot = self.anno_config['k_shot']
-            self.anno_config['support_set_dir'] = self.anno_config['support_set_dir'].format(dataset_name=dataset_name)
-            if self.anno_config['gold_span']:
-                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'gold_span', f'train_support_set_{k_shot}_shot.jsonl')
-            else:
-                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'span', f'train_support_set_{k_shot}_shot.jsonl')
-            with jsonlines.open(k_shot_file) as reader:
-                for line in reader:
-                    gold_mentions = dict()  # store the gold mentions according to the label
-                    # 1. find the gold spans according to the label
-                    for start, end, entity_mention, label_id in line['spans_labels']:
-                        label = self.id2label[int(label_id)]
-                        if label not in gold_mentions.keys():
-                            gold_mentions[label] = {(int(start), int(end), entity_mention)}  # init the set
-                        else:
-                            gold_mentions[label].add((int(start), int(end), entity_mention))
+            if k_shot != 0:
+                examples = ''
+                self.anno_config['support_set_dir'] = self.anno_config['support_set_dir'].format(dataset_name=dataset_name)
+                if self.anno_config['gold_span']:
+                    k_shot_file = os.path.join(self.anno_config['support_set_dir'], f'gold_span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                else:
+                    k_shot_file = os.path.join(self.anno_config['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                with jsonlines.open(k_shot_file) as reader:
+                    for line in reader:
+                        gold_mentions = dict()  # store the gold mentions according to the label
+                        # 1. find the gold spans according to the label
+                        for start, end, entity_mention, label_id in line['spans_labels']:
+                            label = self.id2label[int(label_id)]
+                            if label not in gold_mentions.keys():
+                                gold_mentions[label] = {(int(start), int(end), entity_mention)}  # init the set
+                            else:
+                                gold_mentions[label].add((int(start), int(end), entity_mention))
 
-                        # 2. replace the gold mentions with the formatted mentions
-                        for label, mentions in gold_mentions.items():
-                            # mentions is a set of gold mentions like {(start, end, gold_mention_span), ...}
-                            # sort the mentions by the end position by ascending order
-                            # e.g., {(7, 8, 'Mass.'), (5, 6, 'Westborough')} -> {(5, 6, 'Westborough'), (7, 8, 'Mass.'),}
-                            mentions = sorted(mentions, key=lambda x: x[1], reverse=False)
+                            # 2. replace the gold mentions with the formatted mentions
+                            for label, mentions in gold_mentions.items():
+                                # mentions is a set of gold mentions like {(start, end, gold_mention_span), ...}
+                                # sort the mentions by the end position by ascending order
+                                # e.g., {(7, 8, 'Mass.'), (5, 6, 'Westborough')} -> {(5, 6, 'Westborough'), (7, 8, 'Mass.'),}
+                                mentions = sorted(mentions, key=lambda x: x[1], reverse=False)
 
-                            output = []  # init the output for this label
-                            pre_end = 0  # the end position of the previous mention
-                            for start, end, mention in mentions:
-                                formatted_mention = f'@@ {mention} ##'
-                                output = output + line['tokens'][pre_end:start] + [formatted_mention]
-                                pre_end = end
-                            output += line['tokens'][pre_end:]  # add the rest tokens, or line['tokens'][end:]
+                                output = []  # init the output for this label
+                                pre_end = 0  # the end position of the previous mention
+                                for start, end, mention in mentions:
+                                    formatted_mention = f'@@ {mention} ##'
+                                    output = output + line['tokens'][pre_end:start] + [formatted_mention]
+                                    pre_end = end
+                                output += line['tokens'][pre_end:]  # add the rest tokens, or line['tokens'][end:]
 
-                            sent = ' '.join(line['tokens'])
-                            output = '"' + ' '.join(output) + '"'
-                            instance = self.anno_config['instance_template'].format(label=label, sentence=sent, output=output)
-                            examples += f'{index + 1})\n{instance}\n'
-                            index += 1
+                                sent = ' '.join(line['tokens'])
+                                output = '"' + ' '.join(output) + '"'
+                                instance = self.anno_config['instance_template'].format(label=label, sentence=sent, output=output)
+                                examples += f'{index + 1})\n{instance}\n'
+                                index += 1
         return self._init_chat_msg_template(examples, use_api=use_api)
 
     def _mt_fs_msg(self, annotator_cfg, dataset_name, use_api=False) -> list[None | dict[str, str]]:
@@ -366,25 +377,27 @@ class Annotation(Label):
         if annotator_cfg['chat']:
             pass
         else:
-            examples = ''
+            examples = None
             index = 0
             k_shot = self.anno_config['k_shot']
-            self.anno_config['support_set_dir'] = self.anno_config['support_set_dir'].format(dataset_name=dataset_name)
-            if self.anno_config['gold_span']:
-                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'gold_span', f'train_support_set_{k_shot}_shot.jsonl')
-            else:
-                k_shot_file = os.path.join(self.anno_config['support_set_dir'], 'span', f'train_support_set_{k_shot}_shot.jsonl')
-            with jsonlines.open(k_shot_file) as reader:
-                for line in reader:
-                    sentence = ' '.join((line['tokens']))
-                    output = '['
-                    for start, end, entity_mention, label_id in line['spans_labels']:
-                        label = self.id2label[int(label_id)]
-                        output += f'("{label}", "{entity_mention}"),'
-                    output += ']'
-                    instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
-                    examples += f'{index + 1})\n{instance}\n'
-                    index += 1
+            if k_shot != 0:
+                examples = ''
+                self.anno_config['support_set_dir'] = self.anno_config['support_set_dir'].format(dataset_name=dataset_name)
+                if self.anno_config['gold_span']:
+                    k_shot_file = os.path.join(self.anno_config['support_set_dir'], f'gold_span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                else:
+                    k_shot_file = os.path.join(self.anno_config['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                with jsonlines.open(k_shot_file) as reader:
+                    for line in reader:
+                        sentence = ' '.join((line['tokens']))
+                        output = '['
+                        for start, end, entity_mention, label_id in line['spans_labels']:
+                            label = self.id2label[int(label_id)]
+                            output += f'("{label}", "{entity_mention}"),'
+                        output += ']'
+                        instance = self.anno_config['instance_template'].format(sentence=sentence, output=output)
+                        examples += f'{index + 1})\n{instance}\n'
+                        index += 1
 
         return self._init_chat_msg_template(examples, use_api=use_api)
 
@@ -499,7 +512,7 @@ class Annotation(Label):
             result = re.search(pattern, output_text, re.DOTALL)  # only find the first list string
             try:
                 tmp_spans = ast.literal_eval(result.group(0).strip())  # tmp_spans shapes like [(type 0, mention0),...]
-                tmp_spans = filter(lambda e: len(e) == 2, tmp_spans)  # filter the invalid spans
+                tmp_spans = filter(lambda e: e and len(e) == 2, tmp_spans)  # filter the invalid spans
             except Exception:  # the output_text is not valid
                 tmp_spans = []
 
@@ -525,6 +538,7 @@ class Annotation(Label):
                         continue
             return out_label
 
+    @retry(wait=wait_random(1,3), retry=retry_if_exception_type(Exception))
     def get_response(self, client, chat_message, **kwargs):
         """
         Get the response of the annotator using api.
@@ -533,8 +547,10 @@ class Annotation(Label):
         :return:
         """
         # https://help.aliyun.com/zh/dashscope/developer-reference/compatibility-of-openai-with-dashscope/?spm=a2c4g.11186623.0.0.5fef6e432o2fr6
+        import openai
 
         try:
+            print('---------------')
             completion = client.chat.completions.create(
                 model=self.api_cfg['model'],
                 messages=chat_message,
@@ -545,9 +561,19 @@ class Annotation(Label):
             )
             output = completion.choices[0].message.content
             print(output)
-        except Exception as e:
+        except openai.APIConnectionError as e:
+            print("openai.APIConnectionError")
             print(e)
-            output = ''
+        except openai.RateLimitError as e:
+            print("openai.RateLimitError")
+            print(e)
+        except openai.APIStatusError as e:
+            print("openai.APIStatusError")
+            print(e)
+            print(e.status_code)
+        except Exception as e:
+            print("other exception")
+            print(e)
         return output
 
     async def get_all_batch_response(self, batch_jobs, **kwargs):
@@ -671,14 +697,14 @@ class Annotation(Label):
         # cache dir
         self.anno_config['cache_dir'] = self.anno_config['cache_dir'].format(dataset_name=dataset_name)
         if 'augmented' in kwargs.keys() and kwargs['augmented']:
-            aug_dir = os.path.join(self.anno_config['cache_dir'], 'augmented')
+            aug_dir = os.path.join(self.anno_config['cache_dir'], f'augmented_{self.natural_flag}')
             if not os.path.exists(aug_dir):
                 os.makedirs(aug_dir)
             aug_cache_file = os.path.join(aug_dir, self.anno_config['name'] + '.jsonl')
         elif 'gold_span' in self.anno_config.keys() and self.anno_config['gold_span']:
-            self.anno_config['cache_dir'] = os.path.join(self.anno_config['cache_dir'], 'gold_span', kwargs['prompt_type'],annotator_name)
+            self.anno_config['cache_dir'] = os.path.join(self.anno_config['cache_dir'], f'gold_span_{self.natural_flag}', kwargs['prompt_type'],annotator_name)
         else:
-            self.anno_config['cache_dir'] = os.path.join(self.anno_config['cache_dir'], 'span', kwargs['prompt_type'], annotator_name)
+            self.anno_config['cache_dir'] = os.path.join(self.anno_config['cache_dir'], f'span_{self.natural_flag}', kwargs['prompt_type'], annotator_name)
 
         try:
             if 'augmented' in kwargs.keys() and kwargs['augmented']:
@@ -687,21 +713,22 @@ class Annotation(Label):
                 cache_result = load_from_disk(self.anno_config['cache_dir'])
             annotate_flag = False
         except FileNotFoundError:
-            os.makedirs(self.anno_config['cache_dir'], exist_ok=True)
+            if not os.path.exists(self.anno_config['cache_dir']):
+                os.makedirs(self.anno_config['cache_dir'])
 
         # annotation process
         if annotate_flag:
             # 1. Init the chat messages
             if 'single_type_prompt' in self.anno_config.keys() and self.anno_config['single_type_prompt']:
-                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:  # single_type_prompt with few-shot setting
+                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot'] >= 0:  # single_type_prompt with few-shot setting
                     chat_msg_template = self._st_fs_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
                 else:  # single_type_prompt without few-shot setting
                     chat_msg_template = self._st_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
             elif 'multi_type_prompt' in self.anno_config.keys() and self.anno_config['multi_type_prompt']:
-                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:
+                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot'] >= 0:
                     chat_msg_template = self._mt_fs_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
             else:
-                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot']:  # 2-stage pipeline with few-shot setting
+                if 'k_shot' in self.anno_config.keys() and self.anno_config['k_shot'] >= 0:  # 2-stage pipeline with few-shot setting
                     chat_msg_template = self._pipeline_fs_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
                 else:  # 2-stage pipeline without few-shot setting
                     chat_msg_template = self._pipeline_msg(annotator_cfg=annotator_cfg, dataset_name=dataset_name,use_api=self.use_api)
@@ -711,6 +738,7 @@ class Annotation(Label):
                 client = OpenAI(
                     api_key=os.getenv(self.api_cfg['api_key']),
                     base_url=self.api_cfg['base_url'],  # base_url
+                    max_retries=3,
                 )
             elif self.use_api and self.api_cfg['batch_api']:
                 client = ZhipuAI(
@@ -740,7 +768,7 @@ class Annotation(Label):
             pbar = tqdm(fu.batched(self._generate_chat_msg(instances=dataset,
                                                            chat_msg_template=chat_msg_template, ),
                                    annotator_cfg['anno_bs']),
-                        desc=f'annotating by {annotator_name}')
+                        desc=f'annotating by {annotator_name}, dataset {dataset_name}')
 
             res_labels, res_label_ids = [], []  # store the output labels and label ids
 
@@ -1031,15 +1059,16 @@ class Annotation(Label):
                             'accuracy & f1-micro': accuracy_score(y_true=y_true, y_pred=y_pred),
                             'matthews_corrcoef': matthews_corrcoef(y_true=y_true, y_pred=y_pred),
                             'cohen_kappa_score': cohen_kappa_score(y1=y_true, y2=y_pred)}
-            res_cache_dir = os.path.join(eval_dir, 'gold_span', kwargs['prompt_type'])
+            res_cache_dir = os.path.join(eval_dir, f'gold_span_{self.natural_flag}', kwargs['prompt_type'])
         else:
             # compute span-level metrics
             eval_results = fu.compute_span_f1(y_true,  y_pred)
-            res_cache_dir = os.path.join(eval_dir, 'span', kwargs['prompt_type'])
+            res_cache_dir = os.path.join(eval_dir, f'span_{self.natural_flag}', kwargs['prompt_type'])
 
         if not os.path.exists(res_cache_dir):
             os.makedirs(res_cache_dir)
         res_file = os.path.join(res_cache_dir, '{}_res.txt'.format(kwargs['annotator_name']))
+        print(f'saved the evaluation results to {res_file}')
         with open(res_file, 'w') as f:
             for metric, res in eval_results.items():
                 f.write(f'{metric}: {res}\n')
