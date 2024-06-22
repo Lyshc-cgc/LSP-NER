@@ -7,7 +7,7 @@ gold_span: False  # if True, we use gold span from annotation. If False, we get 
 support_set_dir: data/{dataset_name}/support_set  # support set directory
 k_shot: 5  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
 multi_type_prompt: True  # if True, we use multi-type prompt. If False, we use single-type prompt.
-simple_des: False  # whether to use simple type description
+des_format: full  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
 
 prompt_template: >-
   {system_role}

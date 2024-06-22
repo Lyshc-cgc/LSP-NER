@@ -1,6 +1,6 @@
 
 ontonotes:
-  natural: False  # whether to use natural-format labels
+  natural: True  # whether to use natural-format labels
   labels:
     PERSON:
       natural: Person

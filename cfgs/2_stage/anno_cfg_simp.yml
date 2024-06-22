@@ -5,7 +5,7 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
-simple_des: True  # whether to use simple type description
+des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'no' for no description
 
 prompt_template: >-
   {system_role}

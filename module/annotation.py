@@ -166,14 +166,19 @@ class Annotation(Label):
                     type_string = self.labels[type]['natural']
                 else:
                     type_string = type
-                if 'simple_des' in self.anno_config.keys() and self.anno_config['simple_des']:
-                    description = self.labels[type]['description'].split('.')[:2]  # only show the first two sentences
-                    description = ' '.join(description)
+
+                if 'des_format' in self.anno_config.keys() and self.anno_config['des_format'] == 'empty':  # don't show the description of the types
+                    description = ''
                 else:
-                    description = self.labels[type]['description']
-                description = type_string + ' ' + description
+                    if 'des_format' in self.anno_config.keys() and self.anno_config['des_format'] == 'simple':  # use simple description
+                        description = self.labels[type]['description'].split('.')[:2]  # only show the first two sentences
+                        description = ' '.join(description)
+                    else:  # use full description
+                        description = self.labels[type]['description']
+
+                    description = type_string + ' ' + description
                 types_string += '{idx}) {type}\n {description}\n'.format(idx=type_id+1, type=type_string, description=description)
-            types_prompt = f"Here are types and their descriptions: \n ### Types \n {types_string}\n"
+            types_prompt = f"Given types : ### Types \n {types_string}\n"
         kwargs.update({'types_prompt': types_prompt})
 
         guidelines_prompt = ''
@@ -695,26 +700,26 @@ class Annotation(Label):
             annotator_name =  model_name + '-' + self.anno_config['name']
 
         # cache dir
-        self.anno_config['cache_dir'] = self.anno_config['cache_dir'].format(dataset_name=dataset_name)
+        cache_dir = self.anno_config['cache_dir'].format(dataset_name=dataset_name)
         if 'augmented' in kwargs.keys() and kwargs['augmented']:
-            aug_dir = os.path.join(self.anno_config['cache_dir'], f'augmented_{self.natural_flag}')
+            aug_dir = os.path.join(cache_dir, f'augmented_{self.natural_flag}')
             if not os.path.exists(aug_dir):
                 os.makedirs(aug_dir)
             aug_cache_file = os.path.join(aug_dir, self.anno_config['name'] + '.jsonl')
         elif 'gold_span' in self.anno_config.keys() and self.anno_config['gold_span']:
-            self.anno_config['cache_dir'] = os.path.join(self.anno_config['cache_dir'], f'gold_span_{self.natural_flag}', kwargs['prompt_type'],annotator_name)
+            res_cache_dir = os.path.join(cache_dir, f'gold_span_{self.natural_flag}', kwargs['prompt_type'],annotator_name)
         else:
-            self.anno_config['cache_dir'] = os.path.join(self.anno_config['cache_dir'], f'span_{self.natural_flag}', kwargs['prompt_type'], annotator_name)
+            res_cache_dir = os.path.join(cache_dir, f'span_{self.natural_flag}', kwargs['prompt_type'], annotator_name)
 
         try:
             if 'augmented' in kwargs.keys() and kwargs['augmented']:
                 cache_result = load_dataset("json", data_files=aug_cache_file)
             else:
-                cache_result = load_from_disk(self.anno_config['cache_dir'])
+                cache_result = load_from_disk(res_cache_dir)
             annotate_flag = False
         except FileNotFoundError:
-            if not os.path.exists(self.anno_config['cache_dir']):
-                os.makedirs(self.anno_config['cache_dir'])
+            if not os.path.exists(res_cache_dir):
+                os.makedirs(res_cache_dir)
 
         # annotation process
         if annotate_flag:
@@ -964,7 +969,7 @@ class Annotation(Label):
                 if 'augmented' in kwargs.keys() and kwargs['augmented']:
                     cache_result.to_json(aug_cache_file)
                 else:
-                    cache_result.save_to_disk(self.anno_config['cache_dir'])
+                    cache_result.save_to_disk(res_cache_dir)
 
         # store the cache result to the queue for multi-processing
         if queue:

@@ -19,10 +19,6 @@ anno_cfgs:
     - cfgs/single_type/anno_cfg_st.yml  # w/o analysis
     - cfgs/single_type/anno_cfg_st_an.yml  # w analysis
     - cfgs/single_type/anno_cfg_st_20_an.yml  # w analysis
-  multi_type:  # LLM recognize all types of entities including 'O' types, using a chain of thought.
-    - cfgs/anno_cfg_mt_gd_20.yml
-    - cfgs/anno_cfg_mt_20.yml
-    - cfgs/anno_cfg_mt_fs_1.yml
   few_shot:  # LLM classify the given entities, 2-stage pipeline, few-shot setting
     - cfgs/2_stage/anno_cfg_fs_1_simp.yml  # 1-shot setting
     - cfgs/2_stage/anno_cfg_fs_1.yml  # 1-shot setting
@@ -36,6 +32,11 @@ anno_cfgs:
     - cfgs/multi_type/anno_cfg_mt_fs_0.yml
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
+  cand_mention_fs:
+    - cfgs/cand_mention/anno_cfg_cm_fs_0.yml
+    - cfgs/cand_mention/anno_cfg_cm_fs_1.yml
+    - cfgs/cand_mention/anno_cfg_cm_fs_5.yml
+
 
 # api config
 api_cfg: cfgs/api.yml

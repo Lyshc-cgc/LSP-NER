@@ -5,7 +5,7 @@ from module.func_util import get_config
 def main():
     config = get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'conll'  # 'conll', 'ontonotes'
+    dataset_name = 'ontonotes'  # 'conll', 'ontonotes'
     assert dataset_name in config['data_cfgs'].keys() # ('conll', 'ontonotes')
 
     data_cfg = get_config(config['data_cfgs'][dataset_name])
