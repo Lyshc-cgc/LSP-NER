@@ -2,6 +2,7 @@ import os
 import copy
 import random
 
+import math
 import jsonlines
 import multiprocess
 import module.func_util as fu
@@ -378,18 +379,33 @@ class Processor(Label):
         # check the cached
         # 1.1 get the entity number of each label
 
-        label_nums = dict()
+        label_nums = {k: 0 for k in self.label2id.keys() if k != 'O'}  # store the number of entities for each label
+        label_indices = {k: [] for k in self.label2id.keys() if k != 'O' }  # store the index of instances for each label
+        label_nums['none'], label_indices['none'] = 0, []  # store the number and index of instances without any golden entity spans
         for instance in dataset:
+            if len(instance['spans_labels']) == 0:
+                label_nums['none'] += 1
+                label_indices['none'].append(instance['id'])
+                continue
+
             for spans_label in instance['spans_labels']:
                 # shape like (start, end, gold_mention_span, gold_label_id)
                 label_id = int(spans_label[-1])
                 label = self.id2label[label_id]
-                if label not in label_nums.keys():
-                    label_nums[label] = 0
                 label_nums[label] += 1
+                label_indices[label].append(instance['id'])
+
+        # remove dunplicate indices
+        for k, v in label_indices.items():
+            label_indices[k] = list(set(v))
+
+        sum_labels = sum(label_nums.values())
+        label_dist = {k: v / sum_labels for k, v in label_nums.items()}
 
         return {
             'label_nums': label_nums,
+            'label_dist': label_dist,
+            'label_indices': label_indices
         }
 
     def support_set_sampling(self, dataset, k_shot=1, sample_split='train'):
@@ -473,6 +489,24 @@ class Processor(Label):
 
         counter = _update_counter(support_set, counter)
         return support_set, counter
+
+    def test_subset_sampling(self, test_split, total=200):
+        """
+        sample test subset from the whole test split according to label distribution.
+        :param test_split: the test split to be sampled.
+        :param total: the total number of the test subset.
+        :return:
+        """
+        statistics_res = self.statistics(test_split)
+        label_dist,  label_indices= statistics_res['label_dist'], statistics_res['label_indices']
+        choice_indices = []
+        for label, proportion in label_dist.items():
+            choice_num = math.ceil(proportion * total)
+            choice_indices += random.sample(label_indices[label], choice_num)
+
+        choice_indices = list(set(choice_indices))
+        test_subset = test_split.select(choice_indices)
+        return test_subset
 
     def process(self):
         # 0. init config

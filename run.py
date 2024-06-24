@@ -24,8 +24,9 @@ def main():
     prompt_type = 'mt_few_shot'
     augmented = False
     if not augmented:
-        dataset = dataset.shuffle().select(range(200))
-        assert prompt_type in ('raw', 'single_type', 'mt_few_shot', 'few_shot', 'st_few_shot')
+        # dataset = dataset.shuffle().select(range(200))
+        dataset = proc.test_subset_sampling(dataset, 100)
+        assert prompt_type in ('raw', 'single_type', 'mt_few_shot', 'few_shot', 'st_few_shot', 'cand_mention_fs')
         anno_cfg_paths = config['anno_cfgs'][prompt_type]
 
         for anno_cfg_path in anno_cfg_paths:
