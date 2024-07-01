@@ -1,10 +1,14 @@
+import random
 import re
 import yaml
 import itertools
 import numpy as np
+import pandas as pd
 from scipy.stats import norm
 from statsmodels.stats import inter_rater as irr
 from yaml import SafeLoader
+from tqdm import tqdm
+
 def get_config(cfg_file):
     """
     Get the configuration from the configuration file.
@@ -84,7 +88,7 @@ def eval_anno_quality(data, metric='fleiss_kappa'):
 def compute_span_f1(gold_spans, pred_spans):
     """
     Compute the confusion matrix, span-level metrics such as precision, recall and F1-micro.
-    :param gold_spans: the gold spans in a batch.
+    :param gold_spans: the gold spans.
     :param pred_spans: the spans predicted by the model.
     :return:
     """
@@ -122,6 +126,119 @@ def compute_span_f1(gold_spans, pred_spans):
         'f1': f1
     }
 
+def compute_span_f1_by_labels(gold_spans, pred_spans, id2label, res_file):
+    """
+    Compute the confusion matrix, span-level metrics such as precision, recall and F1-micro for each label.
+    :param gold_spans: the gold spans.
+    :param pred_spans: the predicted spans.
+    :param id2label: a map from label id to the label name.
+    :param res_file: the file to save the results.
+    :return:
+    """
+    # one record for one label
+    # every record conclude all information we need
+    # 1) Label, the label name
+    # 2) Gold count, the number of gold spans for this label
+    # 3) Gold rate, the proportion of gold spans to the total gold spans for this label
+    # 4) Pred count, the number of predicted spans for this label
+    # 5) Pred rate, the proportion of predicted spans to the total predicted spans for this label
+    # 6) TP, the true positive for this label
+    # 7) FP, the false positive for this label
+    # 8) FN, the false negative for this label
+    # 9) Pre, the precision for this label
+    # 10) Rec, the recall for this label
+    # 11) F1, the F1-micro for this label
+
+    label_record = {}
+    for lb in id2label.values():
+        if lb == 'O':  # do not consider the 'O' label
+            continue
+        label_record[lb] = {"Label": lb, "Gold count": 0, "Gold rate": 0, "Pred count": 0, "Pred rate": 0,
+                           "TP": 0, "FP": 0, "FN": 0, "P": 0, "R": 0, "F1": 0}
+
+    for gold_span in gold_spans:
+        label_id = int(gold_span[-1])  # shape like (start, end, span, label)
+        label = id2label[label_id]
+        label_record[label]["Gold count"] += 1
+
+    ood_type_preds = []
+    ood_mention_preds = []
+    for pred_span in tqdm(pred_spans, desc="compute metric"):
+        mention, label_id = pred_span[-2], pred_span[-1]  # shape like (start, end, mention span, label)
+        label_id = int(label_id)  # shape like (start, end, span, label)
+        label = id2label[label_id]
+        # ood type
+        if label not in id2label.values():
+            ood_type_preds.append({label: mention})
+            continue
+        label_record[label]["Pred count"] += 1
+        # ood mention,
+        # if tmp_mention not in item["sentence"]:
+        #     ood_mention_preds.append({tmp_mention: tmp_type})
+        #     continue
+
+        if pred_span in gold_spans:
+            label_record[label]["TP"] += 1
+            gold_spans.remove(pred_span)
+
+    # the total metrics
+    n_gold_tot = sum([x["Gold count"] for x in label_record.values()])
+    n_pred_tot = sum([x["Pred count"] for x in label_record.values()])
+    true_positive_total = sum([x["TP"] for x in label_record.values()])
+    false_positive_total = n_pred_tot - true_positive_total
+    false_negative_total = n_gold_tot - true_positive_total
+    precision = true_positive_total / n_pred_tot if n_pred_tot else 0
+    recall = true_positive_total / n_gold_tot if n_gold_tot else 0
+    if precision and recall:
+        f1 = 2 * precision * recall / (precision + recall)
+    else:
+        f1 = 0
+    precision = round(precision, 4) * 100
+    recall = round(recall, 4) * 100
+    f1 = round(f1, 4) * 100
+
+    # metrics for each label
+    for l in label_record:
+        gold_count = label_record[l]["Gold count"]
+        pred_count = label_record[l]["Pred count"]
+        true_positive = label_record[l]["TP"]
+        false_positive = pred_count - true_positive
+        false_negative = gold_count - true_positive
+
+        gold_rate = gold_count / n_gold_tot if n_gold_tot else 0
+        pred_rate = pred_count / n_pred_tot if n_pred_tot else 0
+        gold_rate = round(gold_rate, 4) * 100
+        pred_rate = round(pred_rate, 4) * 100
+
+        pre = true_positive / pred_count if pred_count else 0
+        rec = true_positive / gold_count if gold_count else 0
+        if pre and rec:
+            f1 = 2 * pre * rec / (pre + rec)
+        else:
+            f1 = 0
+        pre = round(pre, 4) * 100
+        rec = round(rec, 4) * 100
+        f1 = round(f1, 4) * 100
+
+        label_record[l]["Gold rate"] = gold_rate
+        label_record[l]["Pred rate"] = pred_rate
+        label_record[l]["TP"] = true_positive
+        label_record[l]["FP"] = false_positive
+        label_record[l]["FN"] = false_negative
+        label_record[l]["P"] = pre
+        label_record[l]["R"] = rec
+        label_record[l]["F1"] = f1
+
+    label_record["Total"] = {"Label": "ToTal", "Gold count": n_gold_tot, "Gold rate": 100, "Pred count": n_pred_tot,
+                            "Pred rate": 100, "TP": true_positive_total, "FP": false_positive_total, "FN": false_negative_total,
+                             "P": precision, "R": recall, "F1": f1}
+
+    # convert to dataframe
+    df_metrics = pd.DataFrame(list(label_record.values()))
+    print(f"===== Metrics for each label =====\n{df_metrics}")
+    # cache the results
+    df_metrics.to_csv(res_file, index=False)
+
 def find_span(text, span):
     """
     Find the span in the text.
@@ -152,3 +269,17 @@ def find_span(text, span):
         res_spans.append((start, end, span))
 
     return res_spans
+
+def get_label_subsets(labels, sub_size, repeat_num=1):
+    """
+    Get the subsets of the labels.
+    :param labels: list, the list of labels.
+    :param sub_size: int, the size of the subset.
+    :param repeat_num: the number of times to repeat each label.
+    :return: list, the list of subsets.
+    """
+    label_subsets = []
+    for _ in range(repeat_num):
+        random.shuffle(labels)
+        label_subsets += list(batched(labels, sub_size))
+    return label_subsets

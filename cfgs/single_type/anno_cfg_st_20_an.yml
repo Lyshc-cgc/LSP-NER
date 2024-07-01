@@ -4,7 +4,6 @@ cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
-single_type_prompt: True  # whether to generate chat message using the new prompt to extract entity directly by annotators
 analysis: True  # whether to add analysis process in the output
 simple_des: False  # whether to use simple type description
 
@@ -20,7 +19,7 @@ system_role: >-
 
 types_prompt: True
 instance_template: >-
-  task: You are about to read a sentence. Your task is to identify all '{label}' named entities in the sentence.
+  instruction: You are about to read a sentence. Your task is to identify all '{label}' named entities in the sentence.
     Your output should be a JSON string in the format of '{{"analysis": "your analysis process in a concise manner", "answer": "your answer"}}'.
     Your answer should be a sentence with the entity mention marked with the "@@" and "##" symbols, where "@@" marks the 
     start of the entity and "##" marks the end of the entity.

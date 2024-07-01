@@ -7,7 +7,7 @@ import jsonlines
 import multiprocess
 import module.func_util as fu
 from tqdm import tqdm
-from datasets import load_dataset, load_from_disk
+from datasets import load_dataset, load_from_disk, Dataset
 from module.label import Label
 
 class Processor(Label):
@@ -490,23 +490,46 @@ class Processor(Label):
         counter = _update_counter(support_set, counter)
         return support_set, counter
 
-    def test_subset_sampling(self, test_split, total=200):
+    def subset_sampling(self, dataset: Dataset, size=200, sampling_strategy='random'):
         """
-        sample test subset from the whole test split according to label distribution.
-        :param test_split: the test split to be sampled.
-        :param total: the total number of the test subset.
+        Get the subset of the dataset according to sampling sampling_strategy.
+        :param dataset: the dataset to be sampled to get subset.
+        :param size: the size of the test subset.
+        :param sampling_strategy: the sampling strategy.
+            1) 'random' for random sampling. Select instances randomly.
+            2) 'uniform' for uniform sampling. Choice probability is uniform for each label.
+            3) 'proportion' for proportion sampling. Choice probability is proportional to the number of entities for each label.
         :return:
         """
-        statistics_res = self.statistics(test_split)
-        label_dist,  label_indices= statistics_res['label_dist'], statistics_res['label_indices']
-        choice_indices = []
-        for label, proportion in label_dist.items():
-            choice_num = math.ceil(proportion * total)
-            choice_indices += random.sample(label_indices[label], choice_num)
+        assert sampling_strategy in ('random', 'uniform', 'proportion')
+        if sampling_strategy == 'random':
+            # https://huggingface.co/docs/datasets/process#shuffle
+            # use Dataset.flatten_indices() to rewrite the entire dataset on your disk again to remove the indices mapping
+            dataset_subset = dataset.shuffle().flatten_indices().select(range(size))
 
-        choice_indices = list(set(choice_indices))
-        test_subset = test_split.select(choice_indices)
-        return test_subset
+        elif sampling_strategy == 'proportion':
+            statistics_res = self.statistics(dataset)
+            label_dist,  label_indices= statistics_res['label_dist'], statistics_res['label_indices']
+            choice_indices = []
+            for label, proportion in label_dist.items():
+                choice_num = math.ceil(proportion * size)
+                choice_indices += random.sample(label_indices[label], choice_num)
+
+            choice_indices = list(set(choice_indices))
+            dataset_subset = dataset.select(choice_indices)
+
+        elif sampling_strategy == 'uniform':
+            label_num = len(self.label2id.keys())
+            statistics_res = self.statistics(dataset)
+            label_indices = statistics_res['label_indices']
+            choice_indices = []
+            for label, indices in label_indices.items():
+                choice_num = math.ceil(size / label_num)
+                choice_indices += random.sample(indices, choice_num)
+            choice_indices = list(set(choice_indices))
+            dataset_subset = dataset.select(choice_indices)
+
+        return dataset_subset
 
     def process(self):
         # 0. init config

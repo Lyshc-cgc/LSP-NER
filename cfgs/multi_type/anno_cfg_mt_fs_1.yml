@@ -1,12 +1,11 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: mt-1-shot-simp-dis-01  # the name of the configuration
+name: mt-1-shot-01 # the name of the configuration
 cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
 support_set_dir: data/{dataset_name}/support_set  # support set directory
 k_shot: 1  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
-multi_type_prompt: True  # if True, we use multi-type prompt.
 des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
 
 prompt_template: >-
@@ -65,7 +64,7 @@ annotators: # choose annotating model from your cfgs below.
     anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
     anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty
-    anno_bs: 20  # batch size for this model
+    anno_bs: 5  # batch size for this model
     dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
     gpu_memory_utilization: 0.8
     stream: False  # if True, the model will be used in stream mode. This is useful for chat models.

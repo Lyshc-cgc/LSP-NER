@@ -12,13 +12,6 @@ deepseek:
   api_key: DEEPSEEK_API_KEY  # the os environment variable name
   batch_api: False  # whether to use the bacth api
 
-glm:
-  base_url: https://open.bigmodel.cn/api/paas/v4/
-  endpoint: /v4/chat/completions
-  model: glm-4 # glm-4, GLM-3-Turbo
-  api_key: ZHIPU_API_KEY  # the os environment variable name
-  batch_api: True  # whether to use the bacth api
-
 gpt:
   base_url: https://fastapi.top/v1
 #  base_url: https://api.chatgpt-3.vip/v1
