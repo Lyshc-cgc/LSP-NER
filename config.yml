@@ -1,3 +1,6 @@
+# Register your config file here.
+# Only paths relative to the 'config.yml' file are allowed.
+
 # data process config
 data_cfgs:
   ontonotes: cfgs/data_cfgs/ontonotes5.yml
@@ -42,10 +45,17 @@ anno_cfgs:
     - cfgs/subset_type/anno_cfg_sb_fs_5.yml
   sc_fs:  # subset candidate prompt, few-shot setting
     - cfgs/subset_cand/anno_cfg_sc_fs_5.yml
+    - cfgs/subset_cand/anno_cfg_sc_fs_5_01.yml
+    - cfgs/subset_cand/anno_cfg_sc_fs_5_02.yml
     - cfgs/subset_cand/anno_cfg_sc_fs_1.yml
+    - cfgs/subset_cand/anno_cfg_sc_fs_1_01.yml
+    - cfgs/subset_cand/anno_cfg_sc_fs_1_02.yml
 
 # api config
 api_cfg: cfgs/api.yml
 
 # labels config
 labels_cfg: cfgs/labels.yml
+
+# annotators config
+annotators_cfg: cfgs/annotators.yml
