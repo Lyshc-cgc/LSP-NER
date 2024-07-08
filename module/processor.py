@@ -496,12 +496,13 @@ class Processor(Label):
         :param dataset: the dataset to be sampled to get subset.
         :param size: the size of the test subset.
         :param sampling_strategy: the sampling strategy.
-            1) 'random' for random sampling. Select instances randomly.
-            2) 'uniform' for uniform sampling. Choice probability is uniform for each label.
+            1) 'random' for random sampling. Select instances randomly. Each instance has the same probability of being selected.
+            2) 'lab_uniform' for uniform sampling at label-level. Choice probability is uniform for each label.
             3) 'proportion' for proportion sampling. Choice probability is proportional to the number of entities for each label.
+            4) 'shot_sample' for sampling test set like k-shot sampling. Each label has at least k instances.
         :return:
         """
-        assert sampling_strategy in ('random', 'uniform', 'proportion')
+        assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample')
         if sampling_strategy == 'random':
             # https://huggingface.co/docs/datasets/process#shuffle
             # use Dataset.flatten_indices() to rewrite the entire dataset on your disk again to remove the indices mapping
@@ -518,8 +519,8 @@ class Processor(Label):
             choice_indices = list(set(choice_indices))
             dataset_subset = dataset.select(choice_indices)
 
-        elif sampling_strategy == 'uniform':
-            label_num = len(self.label2id.keys())
+        elif sampling_strategy == 'lab_uniform':
+            label_num = len(self.label2id.keys()) - 1  # exclude 'O' label
             statistics_res = self.statistics(dataset)
             label_indices = statistics_res['label_indices']
             choice_indices = []
@@ -528,6 +529,11 @@ class Processor(Label):
                 choice_indices += random.sample(indices, choice_num)
             choice_indices = list(set(choice_indices))
             dataset_subset = dataset.select(choice_indices)
+
+        elif sampling_strategy == 'shot_sample':
+            # todo, debug and cache the shot sample
+            support_set, counter = self.support_set_sampling(dataset, k_shot=20, sample_split='train')
+            dataset_subset = dataset.select(list(support_set))
 
         return dataset_subset
 

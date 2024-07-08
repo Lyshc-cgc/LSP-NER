@@ -7,7 +7,7 @@ gold_span: False  # if True, we use gold span from annotation. If False, we get 
 support_set_dir: data/{dataset_name}/support_set  # support set directory
 k_shot: 0  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
 des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
-subset_size: 1  # the number of types in the subset. you can set between 0 and 1 , or set an integer number.
+subset_size: 17  # the number of types in the subset. you can set between 0 and 1 , or set an integer number.
 repeat_num: 1  # the number of times to repeat each label.
 
 prompt_template: >-
@@ -71,7 +71,7 @@ annotators: # choose annotating model from your cfgs below.
     checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint for local inference
     # qwen has system prompt. We can input the examples in a form of chatting
     # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
-    anno_temperature: 0.05  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
+    anno_temperature: 0.1  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
     anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
     anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
     repetition_penalty: 1  # set to 1 to avoid repetition penalty

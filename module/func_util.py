@@ -24,7 +24,7 @@ def batched(iterable, n):
     """
     Yield successive n-sized batches from iterable. It's a generator function in itertools module of python 3.12.
     https://docs.python.org/3.12/library/itertools.html#itertools.batched
-    However, it's not available in python 3.10. So, I have implemented it here.
+    However, it's not available in python 3.10. So, I have to implement it here.
 
     :param iterable:
     :param n:
@@ -193,9 +193,9 @@ def compute_span_f1_by_labels(gold_spans, pred_spans, id2label, res_file):
         f1 = 2 * precision * recall / (precision + recall)
     else:
         f1 = 0
-    precision = round(precision, 4) * 100
-    recall = round(recall, 4) * 100
-    f1 = round(f1, 4) * 100
+    precision_total = round(precision, 4) * 100
+    recall_total = round(recall, 4) * 100
+    f1_total = round(f1, 4) * 100
 
     # metrics for each label
     for l in label_record:
@@ -231,7 +231,7 @@ def compute_span_f1_by_labels(gold_spans, pred_spans, id2label, res_file):
 
     label_record["Total"] = {"Label": "ToTal", "Gold count": n_gold_tot, "Gold rate": 100, "Pred count": n_pred_tot,
                             "Pred rate": 100, "TP": true_positive_total, "FP": false_positive_total, "FN": false_negative_total,
-                             "P": precision, "R": recall, "F1": f1}
+                             "P": precision_total, "R": recall_total, "F1": f1_total}
 
     # convert to dataframe
     df_metrics = pd.DataFrame(list(label_record.values()))
@@ -246,6 +246,8 @@ def find_span(text, span):
     :param span: the mention.
     :return: list, the list of spans.
     """
+    if not span:
+        return []
     res_spans = []
     # Find the start character index and end character index of the first matched span.
     re_span = re.escape(span)  # escape special characters in the span
@@ -270,16 +272,20 @@ def find_span(text, span):
 
     return res_spans
 
-def get_label_subsets(labels, sub_size, repeat_num=1):
+def get_label_subsets(labels, sub_size, repeat_num=1, fixed_subsets=None):
     """
     Get the subsets of the labels.
     :param labels: list, the list of labels.
     :param sub_size: int, the size of the subset.
     :param repeat_num: the number of times to repeat each label.
+    :param fixed_subsets: a list of lists or tuples, the fixed subsets. we randomly sample the rest of the labels. e.g., [['PER', 'ORG'], ['LOC', 'GPE'],...]
     :return: list, the list of subsets.
     """
     label_subsets = []
     for _ in range(repeat_num):
         random.shuffle(labels)
-        label_subsets += list(batched(labels, sub_size))
+        if fixed_subsets:
+            labels = [l for l in labels if l not in fixed_subsets]  # filter out labels in the fixed subsets
+            label_subsets += fixed_subsets
+        label_subsets += list(batched(labels, sub_size))  # batch method return a generator
     return label_subsets

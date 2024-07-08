@@ -1,5 +1,5 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: mt-1-shot-01 # the name of the configuration
+name: mt-1-shot-full-02 # the name of the configuration
 cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir

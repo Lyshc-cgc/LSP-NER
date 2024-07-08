@@ -1,11 +1,12 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-
+name: st-1-shot
 cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
 support_set_dir: data/{dataset_name}/support_set  # support set directory
 k_shot: 1  # whether to use few-shot setting
+des_format: full  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
 
 prompt_template: >-
   {system_role}
