@@ -1,0 +1,31 @@
+labels:
+  PER:
+    natural: Person
+    description: >-
+      indicates "Person". These are named persons or family.
+  ORG:
+    natural: Organization
+    description: >-
+      indicates "Organization". These are limited to named corporate, governmental, or other organizational entities.
+  LOC:
+    natural: Location
+    description: >-
+      indicates "Location". These are the name of politically or geographically defined locations such as cities, 
+      provinces, countries, international regions, bodies of water, mountains, etc.
+  MISC:
+    natural: Miscellaneous
+    description: >-
+      indicates "Miscellaneous". These include events, nationalities, products and works of art, etc. This type is 
+      used for named entities that do not fit into the other three types. 
+
+raw_bio: True  # a flag to indicate whether the labels are in BIO format in the raw dataset.(data/*/raw/*)
+raw_label2id:  # the label2id mapping in the raw datasets. (data/*/raw/*)
+  O: 0
+  B-PER: 1
+  I-PER: 2
+  B-ORG: 3
+  I-ORG: 4
+  B-LOC: 5
+  I-LOC: 6
+  B-MISC: 7
+  I-MISC: 8

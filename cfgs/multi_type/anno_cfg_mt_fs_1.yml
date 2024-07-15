@@ -1,11 +1,12 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: mt-1-shot-full-02 # the name of the configuration
+name: mt-1-shot-rep_5-00 # the name of the configuration
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
 support_set_dir: data/{dataset_name}/support_set  # support set directory
 k_shot: 1  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
 des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
+demo_times: 5  # the number of times to repeat each demonstration. defualt 1
 
 prompt_template: >-
   {system_role}

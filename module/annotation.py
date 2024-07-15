@@ -22,19 +22,20 @@ class Annotation(Label):
     """
     The Annotation class is used to annotate the data.
     """
-    def __init__(self, annotator_cfg, api_cfg, labels_cfg):
+    def __init__(self, annotator_cfg, api_cfg, labels_cfg, natural_form=False):
         """
         Initialize the annotation model.
         :param annotator_cfg: the configuration of the local annotator model.
         :param api_cfg: the configuration of the LLM API.
-        :param labels_cfg: the configuration of the labels.
+        :param labels_cfg: the configuration of the label_cfgs.
+        :param natural_form: whether the labels are in natural language form.
         """
         # 0. cfg initialization
-        super().__init__(labels_cfg)
+        super().__init__(labels_cfg, natural_form)
         self.annotator_cfg = annotator_cfg
         self.api_cfg = api_cfg if api_cfg else None
         self.use_api = True if api_cfg else False
-        self.natural_flag = 'natural' if labels_cfg['natural'] else 'bio'  # use natural labels or bio labels
+        self.natural_flag = 'natural' if natural_form else 'bio'  # use natural labels or bio labels
 
         # 1. GPU setting
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # avoid parallelism in tokenizers
@@ -336,10 +337,10 @@ class Annotation(Label):
             pass
         else:
             examples = None
-            index = 0
             k_shot = anno_cfg['k_shot']
             if k_shot != 0:
-                examples = ''
+                # read all examples from the support set
+                example_list = []
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=dataset_name)
                 if anno_cfg['gold_span']:
                     k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'gold_span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
@@ -354,9 +355,15 @@ class Annotation(Label):
                             output += f'("{label}", "{entity_mention}"),'
                         output += ']'
                         instance = anno_cfg['instance_template'].format(sentence=sentence, output=output)
+                        example_list.append(instance)
+
+                index = 0
+                assert 'demo_times' in anno_cfg.keys(), "The demo_times is required for 'multi_type_prompt'. Defualt 1"
+                examples = ''  # store the examples input to context
+                for _ in range(anno_cfg['demo_times']):
+                    for instance in example_list:
                         examples += f'{index + 1})\n{instance}\n'
                         index += 1
-
         return self._init_chat_msg_template(examples, anno_cfg=anno_cfg, use_api=use_api)
 
     def _cm_fs_msg(self, annotator_cfg, anno_cfg, dataset_name, use_api=False) -> list[None | dict[str, str]]:
@@ -841,9 +848,11 @@ class Annotation(Label):
         print(f'result cache dir: {res_cache_dir}')
 
         try:
+            print(f'Trying to load cache file from {res_cache_dir}')
             cache_result = load_from_disk(res_cache_dir)
             annotate_flag = False
         except FileNotFoundError:
+            print(f'No cache file found in {res_cache_dir}')
             if not os.path.exists(res_cache_dir):
                 os.makedirs(res_cache_dir)
 
@@ -1144,30 +1153,6 @@ class Annotation(Label):
 
         # os.kill(os.getpid(), signal.SIGKILL)  # kill itself to release the GPU memory
         return  cache_result
-
-    def annotate_by_all(self, dataset, anno_cfgs, **kwargs):
-        """
-        Annotate the dataset by all annotators (only one annotator for now).
-        :param dataset: the dataset to be annotated
-        :param anno_cfgs: the configs of the annotation settings
-        :param kwargs: other arguments, including
-            1) dataset_name, the name of the dataset
-            2) eval, whether to evaluate the annotation quality for each annotator
-            3) cache, whether to cache the annotation results
-            4) prompt_type, the type of the prompt, including single_type, mt_few_shot, raw, and so on
-            5) sampling_strategy, the strategy to sample the test subset
-            6) dialogue_style, the style of the dialogue
-        """
-        # 1. start process for each annotation settings
-        p_kwargs = {'dataset_name': kwargs['dataset_name'],
-                    'eval': kwargs['eval'],
-                    'cache': kwargs['cache'],
-                    'prompt_type': kwargs['prompt_type'],
-                    'sampling_strategy': kwargs['sampling_strategy'],
-                    'dialogue_style': kwargs['dialogue_style']}
-        for anno_cfg in anno_cfgs:
-            print(f"anno cfg: {anno_cfg['name']}")
-            self.annotate_by_one(dataset, anno_cfg, **p_kwargs)
 
     def evaluate(self, y_true, y_pred, anno_cfg, **kwargs):
         """

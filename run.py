@@ -5,12 +5,15 @@ from module.func_util import get_config
 def main():
     config = get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'ontonotes'  # 'conll', 'ontonotes'
-    assert dataset_name in config['data_cfgs'].keys() # ('conll', 'ontonotes')
+    dataset_name = 'ontonotes5'  # 'conll2003', 'ontonotes5', 'ace2005'
+    assert dataset_name in config['data_cfgs'].keys()
 
-    data_cfg = get_config(config['data_cfgs'][dataset_name])
-    labels_cfg = get_config(config['labels_cfg'])[dataset_name]
-    proc = Processor(data_cfg, labels_cfg)
+    # label form
+    natural_form = False  # natural_form is used to indicate whether the labels are in natural language form.
+
+    data_cfg = get_config(config['data_cfgs'][dataset_name])  # data config
+    labels_cfg = get_config(config['label_cfgs'][dataset_name])  # label config
+    proc = Processor(data_cfg, labels_cfg, natural_form)
     dataset = proc.process()
 
     # 2. annotate the data by LLMs
@@ -27,7 +30,7 @@ def main():
     annotator_cfg = get_config(config['annotators_cfg'])[local_model]
 
     # 2.2 annotation prompt settings
-    prompt_type = 'sc_fs'
+    prompt_type = 'mt_few_shot'
     assert prompt_type in ('raw', 'single_type', 'mt_few_shot', 'raw_few_shot', 'st_few_shot',
                            'cand_mention_fs', 'sb_fs', 'sc_fs')
 
@@ -54,21 +57,24 @@ def main():
     print(f'subset sampling strategy: {sampling_strategy}')
     print(f'dialogue style: {dialogue_style}')
 
-    if test_subset_size > 0:
-        dataset = proc.subset_sampling(dataset, test_subset_size, sampling_strategy)
-
     anno_cfg_paths = config['anno_cfgs'][prompt_type]
     anno_cfgs =  [get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
-    anno = Annotation(annotator_cfg, api_cfg, labels_cfg)
-    anno.annotate_by_all(dataset,
-                         anno_cfgs=anno_cfgs,
-                         quality=False,
-                         dataset_name=dataset_name,
-                         eval=True,
-                         cache=True,
-                         prompt_type=prompt_type,
-                         sampling_strategy=sampling_strategy,
-                         dialogue_style=dialogue_style,)
+    anno = Annotation(annotator_cfg, api_cfg, label_cfgs)
+
+    for anno_cfg in anno_cfgs:
+        if test_subset_size > 0:
+            dataset_subset = proc.subset_sampling(dataset, test_subset_size, sampling_strategy)
+
+        print(f"anno cfg: {anno_cfg['name']}")
+        anno.annotate_by_one(dataset_subset,
+                             anno_cfg=anno_cfg,
+                             quality=False,
+                             dataset_name=dataset_name,
+                             eval=True,
+                             cache=True,
+                             prompt_type=prompt_type,
+                             sampling_strategy=sampling_strategy,
+                             dialogue_style=dialogue_style)
 
 
 if __name__ == '__main__':

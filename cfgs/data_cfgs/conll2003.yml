@@ -1,8 +1,9 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
 
-dataset_name: conll
+dataset_name: conll2003
 data_path: data/{dataset_name}/conll2003.py
 num_proc: 4
+nested: False  # whether the entities are nested
 
 # process config
 tokens_field: tokens  # the field name of the tokens, please make sure the field name is consistent with the data
@@ -34,7 +35,7 @@ eval_quality: True  # whether to evaluate the quality of the spans recognized by
 cuda_devices: all  # specify which GPU to use, 'all' or comma-split str like '0,1,2,...,n-1' (consume that you have n GPUs)
 #mode: loose  # strict or loose
 span_portion: 0.4  # The proportion of the longest span length to sentence length. To filter out long span.
-cand_constituent:  # the candidate constituent labels to be extracted from the constituency parsing results
+cand_constituent:  # the candidate constituent label_cfgs to be extracted from the constituency parsing results
   - NP  # noun phrase
 #  - CD  # Cardinal number
   - JJ  # Adjective

@@ -1,5 +1,5 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: mt-0-shot-full-02  # the name of the configuration
+name: mt-0-shot-03  # the name of the configuration
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers

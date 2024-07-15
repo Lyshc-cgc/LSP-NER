@@ -14,11 +14,16 @@ class Processor(Label):
     """
     The Processor class is used to process the data.
     """
-    def __init__(self, data_cfg, labels_cfg):
-        super().__init__(labels_cfg)
+    def __init__(self, data_cfg, labels_cfg, natural_form=False):
+        """
+        Initialize the Processor class.
+        :param data_cfg: the data processing config from the config file.
+        :param labels_cfg: the configuration of the label_cfgs.
+        :param natural_form: whether the labels are in natural language form.
+        """
+        super().__init__(labels_cfg, natural_form)
         self.config = data_cfg
-        self.num_proc = self.config['num_proc']
-        self.natural_flag = 'natural' if labels_cfg['natural'] else 'bio'  # use natural labels or bio labels
+        self.natural_flag = 'natural' if natural_form else 'bio'  # use natural-form or bio-form
 
     @staticmethod
     def _modify_spacy_tokenizer(nlp):
@@ -503,10 +508,18 @@ class Processor(Label):
         :return:
         """
         assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample')
+        seed = random.randint(0, 512)
+        print(f"Random sampling with seed {seed}...")
+
         if sampling_strategy == 'random':
+            # select_idx = random.sample(range(len(dataset)), size)
+            # print('select id:\n', sorted(select_idx))
             # https://huggingface.co/docs/datasets/process#shuffle
             # use Dataset.flatten_indices() to rewrite the entire dataset on your disk again to remove the indices mapping
-            dataset_subset = dataset.shuffle().flatten_indices().select(range(size))
+            dataset_subset = dataset.shuffle(seed=seed).flatten_indices().select(range(size))
+
+            dataset_idx = [idx for idx in dataset_subset['id']]
+            # print('dataset_idx:\n', sorted(dataset_idx))
 
         elif sampling_strategy == 'proportion':
             statistics_res = self.statistics(dataset)
@@ -574,7 +587,7 @@ class Processor(Label):
             preprocessed_dataset = raw_dataset.map(process_func,
                                                batched=True,
                                                batch_size=self.config['batch_size'],
-                                               num_proc=self.num_proc,
+                                               num_proc=self.config['num_proc'],
                                                with_rank=with_rank)
             # add index column
             preprocessed_dataset = preprocessed_dataset.map(lambda example, index: {"id": index}, with_indices=True)  # add index column
