@@ -3,7 +3,6 @@ name: sb-0-shot-00  # the name of the configuration
 cuda_devices: all  # use all available GPUs
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
-gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
 support_set_dir: data/{dataset_name}/support_set  # support set directory
 k_shot: 0  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
 des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description

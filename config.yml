@@ -5,21 +5,10 @@
 data_cfgs:
   ontonotes5: cfgs/data_cfgs/ontonotes5.yml
   conll2003: cfgs/data_cfgs/conll2003.yml
+  mit_restaurant: cfgs/data_cfgs/mit_restaurant.yml
 
 # annotation config
 anno_cfgs:
-  raw:  # LLM classify the given entities, 2-stage pipeline
-    - cfgs/2_stage/anno_cfg_0.yml
-    - cfgs/2_stage/anno_cfg_simp.yml
-    - cfgs/2_stage/anno_cfg.yml
-#    - cfgs/2_stage/anno_cfg_20.yml
-#    - cfgs/2_stage/anno_cfg_gd_20.yml
-#    - cfgs/2_stage/anno_cfg_gd_20_simp.yml
-  raw_few_shot:  # LLM classify the given entities, 2-stage pipeline, few-shot setting
-    - cfgs/2_stage/anno_cfg_fs_1_simp.yml  # 1-shot setting
-    - cfgs/2_stage/anno_cfg_fs_1.yml  # 1-shot setting
-    - cfgs/2_stage/anno_cfg_fs_5.yml  # 5-shot setting
-
   st_few_shot:  # LLM recognize entities given single type, few-shot setting
     - cfgs/single_type/anno_cfg_st_fs_5.yml
     - cfgs/single_type/anno_cfg_st_fs_1.yml
@@ -27,10 +16,6 @@ anno_cfgs:
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
 #    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
-  cand_mention_fs:  # candidate mention, few-shot setting
-    - cfgs/cand_mention/anno_cfg_cm_fs_0.yml
-    - cfgs/cand_mention/anno_cfg_cm_fs_1.yml
-    - cfgs/cand_mention/anno_cfg_cm_fs_5.yml
   sb_fs:  # subset type prompt, few-shot setting
     - cfgs/subset_type/anno_cfg_sb_fs_0.yml
     - cfgs/subset_type/anno_cfg_sb_fs_1.yml
@@ -46,7 +31,7 @@ api_cfg: cfgs/api.yml
 label_cfgs:
   ontonotes5: cfgs/label_cfgs/ontonotes5.yml
   conll2003: cfgs/label_cfgs/conll2003.yml
-  ace2005: cfgs/label_cfgs/ace2005.yml
+  mit_restaurant: cfgs/label_cfgs/mit_restaurant.yml
 
 # annotators config
 annotators_cfg: cfgs/annotators.yml

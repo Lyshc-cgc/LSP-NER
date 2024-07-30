@@ -1,6 +1,7 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-dataset_name: ontonotes5
-data_path: data/{dataset_name}/ontonotes5.py
+
+dataset_name: mit_restaurant
+data_path: data/{dataset_name}/mit_restaurant.py
 num_proc: 4
 nested: False  # whether the entities are nested
 
