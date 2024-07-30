@@ -4,7 +4,7 @@ qwen:
   base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
   model: qwen-long # qwen-long, qwen-plus
   api_key: DASHSCOPE_API_KEY  # the os environment variable name
-  batch_api: False  # whether to use the bacth api
+  batch_api: False  # whether to use the batch api
 
 deepseek:
   base_url: https://api.deepseek.com/v1

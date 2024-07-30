@@ -1,11 +1,11 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-
-cuda_devices: all  # use all available GPUs
+name: st-0-shot-00
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 gold_span: False  # if True, we use gold span from annotation. If False, we get span from scratch by spaCy and stanza parsers
-analysis: False  # whether to add analysis process in the output
-simple_des: False  # whether to use simple type description
+support_set_dir: data/{dataset_name}/support_set  # support set directory
+k_shot: 0  # whether to use few-shot setting
+des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
 
 prompt_template: >-
   {system_role}
@@ -15,88 +15,14 @@ prompt_template: >-
   {examples_prompt}
 
 system_role: >-
-  You are a professional and helpful crowdsourcing entity annotator using English with the help of description of types.
-
-types_prompt: True
-instance_template: >-
-  instruction: You are about to read a sentence. Your task is to identify all '{label}' named entities in the sentence.
+  You are a professional and helpful crowdsourcing data annotator using English with the help of description of types.
+task_prompt: >-
+  Your task is to identify all '{task_label}' named entities in the sentence.
   Your output should be a sentence with the entity mention marked with the "@@" and "##" symbols, where "@@" marks the 
   start of the entity and "##" marks the end of the entity. 
   If there is no suitable entity mention in the sentence, you just only repeat the sentence.
+types_prompt: True
+instance_template: >-
   sentence: "{sentence}"
   output: {output}
 
-examples:
-  - label: PERSON
-    sentence: "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
-    output: "Some investors say there is a good chance that the trust will , instead , seek to convert the company 's shares to cash , in some sort of friendly restructuring that would n't involve just dumping stock on the market ."
-
-  - label: FAC
-    sentence: "The station is the rebuilt Dundee Tay Bridge railway station , which had been built by the North British Railway ."
-    output: "The station is the rebuilt @@ Dundee Tay Bridge railway station ## , which had been built by the North British Railway."
-
-  - label: DATE
-    sentence: "Rogers played hist first match on February 19 , 2004 against Jamaica , in Nain ."
-    output: "Rogers played hist first match on @@ February 19 , 2004 ## against Jamaica , in Nain ."
-
-  - label: NORP
-    sentence: "American Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
-    output: "@@ American ## Fred Merkel won his 2nd rider 's championship and Honda won the manufacturer 's championship ."
-
-  - label: EVENT
-    sentence: "Among the most famous is the Battle of Hulao Pass , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
-    output: "Among the most famous is the @@ Battle of Hulao Pass ## , where a coalition of dissidents led by Yuan Shao clashed with Dong Zhuo 's elite armies in the novel Romance of the Three Kingdoms ."
-
-annotators: # choose annotating model from your cfgs below.
-#  -
-#   name: Yi  # good
-#   chat: False
-#   checkpoint: ckpt/01-ai/Yi-34B-Chat-8bits # https://huggingface.co/01-ai/Yi-34B-Chat-8bits
-#    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-#   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-#   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
-#   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
-#   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-#   anno_bs: 40  # batch size for this model
-#   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-#   gpu_memory_utilization: 0.8
-#
-#  -
-#   name: Mistral
-#   chat: False
-#   checkpoint: ckpt/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ
-#    # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-#   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-#   anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
-#   anno_max_tokens: 150 # maximum number of tokens to generate per output sequence.
-#   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-#   anno_bs: 40  # batch size for this model
-#   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-#   gpu_memory_utilization: 0.8
-
-  -
-    name: st-wo-an
-    chat: False
-    checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint
-    # qwen has system prompt. We can input the examples in a form of chatting
-    # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
-    anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-    anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-    anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
-    repetition_penalty: 1  # set to 1 to avoid repetition penalty
-    anno_bs: 60  # batch size for this model
-    dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-    gpu_memory_utilization: 0.9
-    stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
-
-#  -
-#   name: AquilaChat2  # good
-#   chat: False
-#   checkpoint: ckpt/TheBloke/AquilaChat2-34B-GPTQ # https://huggingface.co/TheBloke/AquilaChat2-34B-GPTQ
-#   anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-#   anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
-#   anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
-#   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-#   anno_bs: 40  # batch size for this model
-#   dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-#   gpu_memory_utilization: 0.8

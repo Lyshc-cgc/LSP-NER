@@ -180,6 +180,7 @@ class Processor(Label):
         From 'BIO' tag into span format.
         original format https://huggingface.co/datasets/tner/ontonotes5
         We get gold spans directly from the annotations (ground truth).
+        This method can only be used for flat NER datasets.
         :param instances: Dict[str, List], A batch of instances.
         :return:
         """
@@ -257,32 +258,51 @@ class Processor(Label):
         sents = [' '.join(raw_tokens) for raw_tokens in all_raw_tokens]
 
         # 2. process by 2 parsers
+        # 2.1 spaCy
         # refer to
         # 1) https://spacy.io/usage/processing-pipelines#processing
         # 2) https://spacy.io/api/language#pipe
         spacy_docs = list(spacy_nlp.pipe(sents))  # covert generator to list
 
-        for sent, raw_tokens, raw_tags, spa_doc in zip(sents, all_raw_tokens, all_raw_tags, spacy_docs):
-            # 2.1 spaCy
-            # 2.1.1 get tag and token alignment between sentence tokenized by spaCy and raw sentence
-            # see details at https://spacy.io/usage/linguistic-features#aligning-tokenization
-            spacy_tokens = [token.text for token in spa_doc]
-            align = Alignment.from_strings(raw_tokens, spacy_tokens)
-            aligned_tags = []  # the tags assigned to tokens output by spaCy
-            sp_tokens_idx = -1
-            for length in align.y2x.lengths:
-                # the token tag of spacy_tokens at position sp_tokens_idx is aligned to the token tag of raw_tokens at position raw_tokens_idx
-                sp_tokens_idx += length
-                raw_tokens_idx = align.y2x.data[sp_tokens_idx]  # the map from spacy_tokens to raw_tokens is stored in align.y2x.data
-                tag = raw_tags[raw_tokens_idx]
-                aligned_tags.append(tag)  # covert original tags to ids of new tags
+        # 1.3. get batch for different settings
+        if not self.config['nested']:  # flat ner
+            pbar = zip(sents, all_raw_tokens, all_raw_tags, spacy_docs)
+        else:  # nested
+            start_position, end_position = instances['starts'], instances['ends']
+            pbar = zip(sents, all_raw_tokens, start_position, end_position, all_raw_tags, spacy_docs)
+        for instance in pbar:
+            if not self.config['nested']:  # flat NER
+                sent, raw_tokens, raw_tags, spa_doc = instance
+                # 2.1.1 (optional) get tag and token alignment between sentence tokenized by spaCy and raw sentence
+                # see details at https://spacy.io/usage/linguistic-features#aligning-tokenization
+                spacy_tokens = [token.text for token in spa_doc]
+                align = Alignment.from_strings(raw_tokens, spacy_tokens)
+                aligned_tags = []  # the tags assigned to tokens output by spaCy
+                sp_tokens_idx = -1
+                for length in align.y2x.lengths:
+                    # the token tag of spacy_tokens at position sp_tokens_idx is aligned to the token tag of raw_tokens at position raw_tokens_idx
+                    sp_tokens_idx += length
+                    raw_tokens_idx = align.y2x.data[sp_tokens_idx]  # the map from spacy_tokens to raw_tokens is stored in align.y2x.data
+                    tag = raw_tags[raw_tokens_idx]
+                    aligned_tags.append(tag)  # covert original tags to ids of new tags
 
-            # 2.1.2 get gold spans and its labels
-            gold_spans, gold_spans_tags = self._get_span_and_tags(spacy_tokens, aligned_tags)
+                # 2.1.2 get gold spans and its labels
+                gold_spans, gold_spans_tags = self._get_span_and_tags(spacy_tokens, aligned_tags)
 
-            # element in gold_spans is in the shape of (str(start), str(end), span)
-            # element in gold_spans_tags is tag id
-            res_spans_labels.append([(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)])
+                # element in gold_spans is in the shape of (str(start), str(end) (excluded), span)
+                # element in gold_spans_tags is tag id
+                # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, gold_label_id)...]
+                res_spans_labels.append([(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)])
+            else:  # nested NER
+                sent, raw_tokens, starts, ends, raw_tags, spa_doc = instance
+                # 2.1.1 (optional) get the tag directly from the raw dataset
+                # Here, we don't need the alignment between the tokens of the raw sentence and the tokens of the sentence tokenized by spaCy
+                gold_spans = []  # store gold spans for this instance
+                for start, end, label_id in zip(starts, ends, raw_tags):
+                    # end position is exlucluded
+                    gold_spans.append((str(start), str(end), ' '.join(raw_tokens[start: end]), str(label_id)))
+                # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, gold_label_id)...]
+                res_spans_labels.append(gold_spans)
 
             # 2.1.3 get NP chunk by spaCy. They are flat
             # store the start word index, end word index (excluded) and the text of the NP spans.
@@ -361,23 +381,30 @@ class Processor(Label):
             # 2.4. There are spans identified by the parser, which are not gold spans.
             # Their labels should be set to 'O'. After that， they are included as part of the gold spans and labels.
             # So that we can expand the gold spans and labels
-            ex_spans_labels = [(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)]
-            o_tag = str(self.covert_tag2id[self.label2id['O']])
+            if not self.config['nested']:  # flat NER
+                ex_spans_labels = [(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)]
+                o_tag = str(self.covert_tag2id[self.label2id['O']])
+            else:  # nested NER
+                ex_spans_labels = [(str(start), str(end), span, str(label_id)) for start, end, span, label_id in gold_spans]
+                o_tag = str(self.label2id['O'])
             ex_spans_labels += [(*span, o_tag) for span in spans if span not in gold_spans]
             res_ex_spans_labels.append(ex_spans_labels)
 
+        res_tokens = instances[tokens_filed]
+        res_tags = instances[ner_tags_field] if not self.config['nested'] else [[] for _ in range(len(res_tokens))]
         return {
-            'tokens': instances[tokens_filed],
-            'tags': instances[ner_tags_field],
-            'spans': res_spans,  # the spans of the instances, predicted by the spaCy parser, shape like (start, end, mention_span)
-            'spans_labels': res_spans_labels,  # store the gold spans and labels of the instances, shape like (start, end, gold_mention_span, gold_label_id)
-            'expand_spans_labels': res_ex_spans_labels,   # store the expanded gold spans and labels, shape like (start, end, expanded_gold_mention_span, expanded_gold_label_id)
+            'tokens': res_tokens,
+            'tags': res_tags,
+            'spans': res_spans,  # the spans of the instances, predicted by the spaCy parser, shape like (start, end (excluded), mention_span)
+            'spans_labels': res_spans_labels,  # store the gold spans and labels of the instances, shape like (start, end (excluded), gold_mention_span, gold_label_id)
+            'expand_spans_labels': res_ex_spans_labels,   # store the expanded gold spans and labels, shape like (start, end (excluded), expanded_gold_mention_span, expanded_gold_label_id)
             'spa_cons_string': res_spa_cons_string,  # constituency parse tree of the instances, predicted by the spaCy parser
         }
-    def statistics(self, dataset):
+    def statistics(self, dataset, include_none=False):
         """
         Get the statistics of the dataset.
         :param dataset: the dataset to be analyzed.
+        :param include_none: whether to include the instances without any golden entity spans. True means to include.
         :return: the statistics of the dataset.
         """
         # get the statistics of the dataset
@@ -386,9 +413,12 @@ class Processor(Label):
 
         label_nums = {k: 0 for k in self.label2id.keys() if k != 'O'}  # store the number of entities for each label
         label_indices = {k: [] for k in self.label2id.keys() if k != 'O' }  # store the index of instances for each label
-        label_nums['none'], label_indices['none'] = 0, []  # store the number and index of instances without any golden entity spans
+
+        if include_none:
+            label_nums['none'], label_indices['none'] = 0, []  # store the number and index of instances without any golden entity spans
+
         for instance in dataset:
-            if len(instance['spans_labels']) == 0:
+            if include_none and len(instance['spans_labels']) == 0:
                 label_nums['none'] += 1
                 label_indices['none'].append(instance['id'])
                 continue
@@ -453,7 +483,10 @@ class Processor(Label):
         # add new_tags column
         # original tags is BIO schema, we convert it to the new tags schema where the 'O' tag is 0, 'B-DATE' and 'I-DATE' are the same tag, etc.
         ner_tags_field = self.config['ner_tags_field']
-        dataset = dataset.map(lambda example: {"new_tags": [self.covert_tag2id[tag] for tag in example[ner_tags_field]]})
+        if not self.config['nested']:  # flat NER
+            dataset = dataset.map(lambda example: {"new_tags": [self.covert_tag2id[tag] for tag in example[ner_tags_field]]})
+        else:  # nested NER
+            dataset = dataset.map(lambda example: {"new_tags": [tag for tag in example[ner_tags_field]]})
 
         support_set = set()  # the support set
         counter = {label: 0 for label in label_nums.keys()}  # counter to record the number of entities for each label in the support set
@@ -495,7 +528,7 @@ class Processor(Label):
         counter = _update_counter(support_set, counter)
         return support_set, counter
 
-    def subset_sampling(self, dataset: Dataset, size=200, sampling_strategy='random'):
+    def subset_sampling(self, dataset: Dataset, size=200, sampling_strategy='random', seed=None):
         """
         Get the subset of the dataset according to sampling sampling_strategy.
         :param dataset: the dataset to be sampled to get subset.
@@ -505,21 +538,18 @@ class Processor(Label):
             2) 'lab_uniform' for uniform sampling at label-level. Choice probability is uniform for each label.
             3) 'proportion' for proportion sampling. Choice probability is proportional to the number of entities for each label.
             4) 'shot_sample' for sampling test set like k-shot sampling. Each label has at least k instances.
+        :param seed: the seed for random sampling. If None, a random seed will be used.
         :return:
         """
         assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample')
-        seed = random.randint(0, 512)
-        print(f"Random sampling with seed {seed}...")
 
         if sampling_strategy == 'random':
-            # select_idx = random.sample(range(len(dataset)), size)
-            # print('select id:\n', sorted(select_idx))
+            if not seed or isinstance(seed, str):
+                seed = random.randint(0, 512)
+            print(f"Random sampling with seed {seed}...")
             # https://huggingface.co/docs/datasets/process#shuffle
             # use Dataset.flatten_indices() to rewrite the entire dataset on your disk again to remove the indices mapping
             dataset_subset = dataset.shuffle(seed=seed).flatten_indices().select(range(size))
-
-            dataset_idx = [idx for idx in dataset_subset['id']]
-            # print('dataset_idx:\n', sorted(dataset_idx))
 
         elif sampling_strategy == 'proportion':
             statistics_res = self.statistics(dataset)
@@ -647,7 +677,7 @@ class Processor(Label):
                     f.write(f'{metric}: {res}\n')
             print(f"Span quality: {quality_res}")
 
-        # 5. select, shuffle, split and then save the formatted dataset
+        # 5. shuffle, split and then save the formatted dataset
         # 5.1 check the cached result
         if self.config['continue']:
             try:
@@ -664,9 +694,6 @@ class Processor(Label):
         if self.config['shuffle']:
             dataset = dataset.shuffle()
 
-        # 5.4 select the specific number of instances
-        if self.config['select']:
-            dataset = dataset.select(range(self.config['select']))
         dataset.save_to_disk(continue_dir)
 
         return dataset

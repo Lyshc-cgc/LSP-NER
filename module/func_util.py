@@ -4,6 +4,7 @@ import yaml
 import itertools
 import numpy as np
 import pandas as pd
+from collections import Counter
 from scipy.stats import norm
 from statsmodels.stats import inter_rater as irr
 from yaml import SafeLoader
@@ -289,3 +290,81 @@ def get_label_subsets(labels, sub_size, repeat_num=1, fixed_subsets=None):
             label_subsets += fixed_subsets
         label_subsets += list(batched(labels, sub_size))  # batch method return a generator
     return label_subsets
+
+def get_label_mention_pairs(original_pairs, label_mention_map_portion, id2label):
+    """
+    Get the label-mention pairs, where the label-mention pairs are partially correct.
+    :param original_pairs: the original label-mention pairs.
+    :param label_mention_map_portion: the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+    :param id2label: a map from label id to the label name.
+    :return:
+    """
+    random.shuffle(original_pairs)
+    wrong_pairs_num = int(len(original_pairs) * (1-label_mention_map_portion))
+    tmp_wrong_pairs, correct_pairs = original_pairs[:wrong_pairs_num], original_pairs[wrong_pairs_num:]
+    wrong_pairs = []
+    for start, end, entity_mention, label_id in tmp_wrong_pairs:
+        label_ids = list(id2label.keys())
+        label_ids.remove(int(label_id))
+        wrong_label_id = random.choice(label_ids)
+        wrong_pairs.append((start, end, entity_mention, wrong_label_id))
+    res_pairs = correct_pairs + wrong_pairs
+    return res_pairs
+
+def remove_duplicated_label_sets(label_sets: list):
+    """
+    Remove the duplicated label sets.
+    :param label_sets: the label sets
+    :return:
+    """
+    duplicated_id = []  # store the idx of the duplicated label sets
+    for i in range(len(label_sets)):
+        if i in duplicated_id:  # skip the idx that has been in the duplicated_id
+            continue
+        for j in range(i + 1, len(label_sets)):
+            if j in duplicated_id:  # skip the idx that has been in the duplicated_id
+                continue
+            if Counter(label_sets[i]) == Counter(label_sets[j]):
+                duplicated_id.append(j)
+    label_sets = [label_sets[i] for i in range(len(label_sets)) if i not in duplicated_id]
+    return label_sets
+
+def compute_lspi(label_sets: list):
+    """
+    compute the label space per instance (LSPI). This metric is used to evaluate the diversity of the labels.
+    :param label_sets: the label_sets to be evaluated in demonstrations. It is shaped like [label_set1, label_set2, ...].
+        the label set i is shaped like [label1, label2,...]
+    :return:
+    """
+    instances_num = len(label_sets)
+
+    # remove the duplicated label sets
+    label_sets = remove_duplicated_label_sets(label_sets)
+
+    # compute the label space per instance (LSPI)
+    label_space = len(label_sets)
+    lspi = label_space/instances_num
+    return lspi
+
+def compute_label_coverage(label_sets: list, gold_label_sets: list):
+    """
+    Compute the label coverage (LC). This metric is used to evaluate the coverage of labels from the demonstrations over golden labels.
+    :param label_sets: the label sets to be evaluated in demonstrations. It is shaped like [label_set1, label_set2, ...].
+        the label set i is shaped like [label1, label2,...]
+    :param gold_label_sets: the golden label sets from the test set. It is shaped like [gold_label_set1, gold_label_set2,...].
+        the gold label set i is shaped like [gold_label1, gold_label2,...]
+    :return:
+    """
+    # remove the duplicated label sets
+    label_sets = remove_duplicated_label_sets(label_sets)
+    gold_label_sets = remove_duplicated_label_sets(gold_label_sets)
+
+    # compute the label cover (LC)
+    cover_num = 0
+    for label_set in label_sets:
+        if label_set in gold_label_sets:
+            cover_num += 1
+    label_coverage = cover_num/len(gold_label_sets)
+    union_label_sets = label_sets + gold_label_sets
+    # label_coverage1 = cover_num/len(union_label_sets)
+    return label_coverage

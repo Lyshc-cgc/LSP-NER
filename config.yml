@@ -5,7 +5,6 @@
 data_cfgs:
   ontonotes5: cfgs/data_cfgs/ontonotes5.yml
   conll2003: cfgs/data_cfgs/conll2003.yml
-  ace2005: cfgs/data_cfgs/ace2005.yml
 
 # annotation config
 anno_cfgs:
@@ -16,13 +15,6 @@ anno_cfgs:
 #    - cfgs/2_stage/anno_cfg_20.yml
 #    - cfgs/2_stage/anno_cfg_gd_20.yml
 #    - cfgs/2_stage/anno_cfg_gd_20_simp.yml
-  single_type:  # LLM recognize entities given single type
-    - cfgs/single_type/anno_cfg_st_simp.yml  # w/o analysis
-    - cfgs/single_type/anno_cfg_st_gd_20.yml  # w/o analysis
-    - cfgs/single_type/anno_cfg_st_20.yml  # w/o analysis
-    - cfgs/single_type/anno_cfg_st.yml  # w/o analysis
-    - cfgs/single_type/anno_cfg_st_an.yml  # w analysis
-    - cfgs/single_type/anno_cfg_st_20_an.yml  # w analysis
   raw_few_shot:  # LLM classify the given entities, 2-stage pipeline, few-shot setting
     - cfgs/2_stage/anno_cfg_fs_1_simp.yml  # 1-shot setting
     - cfgs/2_stage/anno_cfg_fs_1.yml  # 1-shot setting
@@ -31,20 +23,9 @@ anno_cfgs:
   st_few_shot:  # LLM recognize entities given single type, few-shot setting
     - cfgs/single_type/anno_cfg_st_fs_5.yml
     - cfgs/single_type/anno_cfg_st_fs_1.yml
-    - cfgs/single_type/anno_cfg_st_fs_1_simp.yml
-  mt_few_shot:  # multi-type prompt, few-shot setting
+  mt_fs:  # multi-type prompt, few-shot setting
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_5_01.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_5_02.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_5_6_00.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_5_6_01.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_5_6_02.yml
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_1_01.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_1_02.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_1_6_00.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_1_6_01.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_1_6_02.yml
 #    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
   cand_mention_fs:  # candidate mention, few-shot setting
     - cfgs/cand_mention/anno_cfg_cm_fs_0.yml
@@ -56,11 +37,7 @@ anno_cfgs:
     - cfgs/subset_type/anno_cfg_sb_fs_5.yml
   sc_fs:  # subset candidate prompt, few-shot setting
     - cfgs/subset_cand/anno_cfg_sc_fs_5.yml
-    - cfgs/subset_cand/anno_cfg_sc_fs_5_01.yml
-    - cfgs/subset_cand/anno_cfg_sc_fs_5_02.yml
     - cfgs/subset_cand/anno_cfg_sc_fs_1.yml
-    - cfgs/subset_cand/anno_cfg_sc_fs_1_01.yml
-    - cfgs/subset_cand/anno_cfg_sc_fs_1_02.yml
 
 # api config
 api_cfg: cfgs/api.yml

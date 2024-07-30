@@ -15,7 +15,7 @@
 
 # Lint as: python3
 """Introduction to the CoNLL-2003 Shared Task: Language-Independent Named Entity Recognition"""
-
+# https://huggingface.co/datasets/eriktks/conll2003/blob/main/conll2003.py
 import os
 
 import datasets
