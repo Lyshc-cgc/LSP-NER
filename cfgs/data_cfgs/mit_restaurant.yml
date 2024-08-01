@@ -21,5 +21,3 @@ k_shot:  # the number of examples for each label in the training set
   - 1
 sample_split: train  # the dataset split you want to sample support set from.
 ss_cache_dir: data/{dataset_name}/support_set  # the directory to store the support set cache
-statistics_dir: data/{dataset_name}/statistics  # the directory to store the statistics of the dataset
-cuda_devices: all  # specify which GPU to use, 'all' or comma-split str like '0,1,2,...,n-1' (consume that you have n GPUs)

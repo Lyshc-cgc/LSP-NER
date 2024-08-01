@@ -1,0 +1,82 @@
+labels:
+  ACTOR:
+    natural: actor
+    description: >-
+      indicates "actor". An actor is someone whose job is acting in plays or films.
+  TITLE:
+    natural: title
+    description: >-
+      indicates "title". The title of a movie.
+  YEAR:
+    natural: year
+    description: >-
+      indicates "year". The released year of a movie or time information about a movie.
+  GENRE:
+    natural: genre
+    description: >-
+      indicates "genre". A genre is a particular type of film.
+  PLOT:
+    natural: plot
+    description: >-
+      indicates "plot". The plot of a film, novel, or play is the connected series of events which make up the story.
+  DIRECTOR:
+    natural: director
+    description: >-
+      indicates "director". The director of a play, film, or television programme is the person who decides how it will 
+      appear on stage or screen, and who tells the actors and technical staff what to do.
+  RATINGS_AVERAGE:
+    natural: average ratings
+    description: >-
+      indicates "average ratings". An average rating of something is a score or measurement of how good or popular it is.
+  RATING:
+    natural: rating
+    description: >-
+      indicates "rating". Rating is the film classification system that classifying and rating movies based on their 
+      content and suitable viewing age.
+  CHARACTER:
+    natural: character
+    description: >-
+      indicates "character". A character is a person in a novel, play, or film.
+  SONG:
+    natural: song
+    description: >-
+      indicates "song". A song is a piece of music with words that you sing or somthing/someone about music.
+  REVIEW:
+    natural: review
+    description: >-
+      indicates "review". A review is the evaluation of a film, such as good, bad, etc.
+  TRAILER:
+    natural: trailer
+    description: >-
+      indicates "trailer". A trailer is a short film or programme that is shown before the main film or programme, 
+      advertising what you are about to see.
+  
+
+raw_bio: True  # a flag to indicate whether the labels are in BIO format in the raw dataset.(data/*/raw/*)
+raw_label2id:  # the label2id mapping in the raw datasets. (data/*/raw/*)
+  O: 0
+  B-ACTOR: 1
+  I-ACTOR: 2
+  B-TITLE: 3
+  I-TITLE: 4
+  B-YEAR: 5
+  I-YEAR: 6
+  B-GENRE: 7
+  I-GENRE: 8
+  B-PLOT: 9
+  I-PLOT: 10
+  B-DIRECTOR: 11
+  I-DIRECTOR: 12
+  B-RATINGS_AVERAGE: 13
+  I-RATINGS_AVERAGE: 14
+  B-RATING: 15
+  I-RATING: 16
+  B-CHARACTER: 17
+  I-CHARACTER: 18
+  B-SONG: 19
+  I-SONG: 20
+  B-REVIEW: 21
+  I-REVIEW: 22
+  B-TRAILER: 23
+  I-TRAILER: 24
+

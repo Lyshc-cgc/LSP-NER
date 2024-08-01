@@ -1,10 +1,11 @@
-import xlsxwriter
+import module.func_util as fu
 from module.annotation import Annotation
 from module.processor import Processor
-from module.func_util import get_config
+
+logger = fu.get_logger('test_scipt')
 
 def main():
-    config = get_config('config.yml')
+    config = fu.get_config('config.yml')
     # 1. pre-process the data
     dataset_name = 'ontonotes5'  # 'conll2003', 'ontonotes5', 'ace2005'
     assert dataset_name in config['data_cfgs'].keys()
@@ -12,8 +13,8 @@ def main():
     # label form
     natural_form = False  # natural_form is used to indicate whether the labels are in natural language form.
 
-    data_cfg = get_config(config['data_cfgs'][dataset_name])  # data config
-    labels_cfg = get_config(config['label_cfgs'][dataset_name])  # label config
+    data_cfg = fu.get_config(config['data_cfgs'][dataset_name])  # data config
+    labels_cfg = fu.get_config(config['label_cfgs'][dataset_name])  # label config
     proc = Processor(data_cfg, labels_cfg, natural_form)
     dataset = proc.process()
 
@@ -23,12 +24,12 @@ def main():
     use_api = False
     api_model = 'gpt'
     assert api_model in ('qwen', 'deepseek', 'glm', 'gpt')
-    api_cfg = get_config(config['api_cfg'])[api_model] if use_api else None
+    api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
 
     # local annotator
     local_model = 'Qwen1.5'
     assert local_model in ('Qwen1.5',)  # add more
-    annotator_cfg = get_config(config['annotators_cfg'])[local_model]
+    annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
 
     # 2.2 annotation prompt settings
     prompt_type = 'sc_fs'
@@ -57,16 +58,16 @@ def main():
     seeds = [22, 32, 42]  # [22, 32, 42], ['00', '01', '02']
     start_row = 2
 
-    print(f'use api: {use_api}')
-    print(f'api model: {api_model}')
-    print(f'local model: {local_model}')
-    print(f'use prompt type: {prompt_type}')
-    print(f'test subset size: {test_subset_size}')
-    print(f'subset sampling strategy: {sampling_strategy}')
-    print(f'dialogue style: {dialogue_style}')
+    logger.info(f'use api: {use_api}')
+    logger.info(f'api model: {api_model}')
+    logger.info(f'local model: {local_model}')
+    logger.info(f'use prompt type: {prompt_type}')
+    logger.info(f'test subset size: {test_subset_size}')
+    logger.info(f'subset sampling strategy: {sampling_strategy}')
+    logger.info(f'dialogue style: {dialogue_style}')
 
     anno_cfg_paths = config['anno_cfgs'][prompt_type]
-    anno_cfgs =  [get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
+    anno_cfgs =  [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
 
     anno = Annotation(annotator_cfg,
                       api_cfg,
@@ -81,7 +82,7 @@ def main():
                     anno_cfg['repeat_num'] = rep_num + 1  # for sc_fs
                     if test_subset_size > 0:
                         dataset_subset = proc.subset_sampling(dataset, test_subset_size, sampling_strategy, seed)
-                    print(f"anno cfg: {anno_cfg['name']}")
+                    logger.info(f"anno cfg: {anno_cfg['name']}")
 
                     # write metric to excel
                     start_row = anno.annotate_by_one(dataset_subset,

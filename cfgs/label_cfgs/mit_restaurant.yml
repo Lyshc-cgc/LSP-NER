@@ -1,35 +1,35 @@
 labels:
-  RAT:
+  Rating:
     natural: Rating
     description: >-
       indicates "Rating". A rating of something is a score or measurement of how good or popular it is.
-  AME:
+  Amenity:
     natural: Amenity
     description: >-
       indicates "Amenity". Amenities are things such as shopping centres or sports facilities that are provided for 
       people's convenience, enjoyment, or comfort.
-  LOC:
+  Location:
     natural: Location
     description: >-
       indicates "Location". These are the name of politically or geographically defined locations such as cities, 
       provinces, countries, international regions, bodies of water, mountains, etc.
-  RN:
+  Restaurant_Name:
     natural: Restaurant Name
     description: >-
       indicates indicates "Restaurant Name". The name of a restaurant.
-  PRI:
+  Price:
     natural: Price
     description: >-
       indicates "Price". The price of something is the amount of money that you have to pay in order to buy it.
-  HOU:
+  Hours:
     natural: Hours
     description: >-
       indicates "Hours". The opening hours of the restaurant.
-  DS:
+  Dish:
     natural: Dish
     description: >-
       indicates "Dish". Food that is prepared in a particular style or combination can be referred to as a dish.
-  CS:
+  Cuisine:
     natural: Cuisine
     description: >-
       indicates "Cuisine". The cuisine of a country or district is the style of cooking that is characteristic of that place.

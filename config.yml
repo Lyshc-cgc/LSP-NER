@@ -6,6 +6,7 @@ data_cfgs:
   ontonotes5: cfgs/data_cfgs/ontonotes5.yml
   conll2003: cfgs/data_cfgs/conll2003.yml
   mit_restaurant: cfgs/data_cfgs/mit_restaurant.yml
+  mit_movies: cfgs/data_cfgs/mit_movies.yml
 
 # annotation config
 anno_cfgs:
@@ -15,7 +16,6 @@ anno_cfgs:
   mt_fs:  # multi-type prompt, few-shot setting
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
-#    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
   sb_fs:  # subset type prompt, few-shot setting
     - cfgs/subset_type/anno_cfg_sb_fs_0.yml
     - cfgs/subset_type/anno_cfg_sb_fs_1.yml
@@ -32,6 +32,7 @@ label_cfgs:
   ontonotes5: cfgs/label_cfgs/ontonotes5.yml
   conll2003: cfgs/label_cfgs/conll2003.yml
   mit_restaurant: cfgs/label_cfgs/mit_restaurant.yml
+  mit_movies: cfgs/label_cfgs/mit_movies.yml
 
 # annotators config
 annotators_cfg: cfgs/annotators.yml

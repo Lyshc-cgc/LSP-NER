@@ -159,8 +159,6 @@ labels:
       indicates "Language". This type represents any named language. 
       Following are some examples. The named entity mentions are marked within square brackets:
       "[Latin]", "[Arabic]", "[Filipino]", "[Chinese] and [English] version".
-  
-
 
 raw_bio: True  # a flag to indicate whether the labels are in BIO format in the raw dataset.(data/*/raw/*)
 raw_label2id:  # the label2id mapping in the raw datasets. (data/*/raw/*)

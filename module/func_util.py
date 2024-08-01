@@ -2,6 +2,7 @@ import random
 import re
 import yaml
 import itertools
+import logging
 import numpy as np
 import pandas as pd
 from collections import Counter
@@ -9,6 +10,12 @@ from scipy.stats import norm
 from statsmodels.stats import inter_rater as irr
 from yaml import SafeLoader
 from tqdm import tqdm
+
+
+def get_logger(name, level=logging.INFO):
+    logging.basicConfig(level=level, format='[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d ] -- %(message)s')
+    logger = logging.getLogger(name)
+    return logger
 
 def get_config(cfg_file):
     """

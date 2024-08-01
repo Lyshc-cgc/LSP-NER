@@ -7,7 +7,6 @@ import os
 import xlsxwriter
 
 import jsonlines
-import torch
 from vllm import LLM, SamplingParams
 from tenacity import retry, retry_if_exception_type, wait_random
 from openai import OpenAI, AsyncOpenAI
@@ -15,6 +14,8 @@ from datasets import load_from_disk, Dataset, load_dataset
 from tqdm import tqdm
 from module import func_util as fu
 from module.label import Label
+
+logger = fu.get_logger('Annotation')
 
 class Annotation(Label):
     """
@@ -45,6 +46,7 @@ class Annotation(Label):
 
         # 2. Init the annotating model
         if not just_test:
+            logger.info('----- Init LLM -----')
             if self.use_api:
                 self.client = OpenAI(
                     api_key=os.getenv(self.api_cfg['api_key']),
@@ -299,7 +301,7 @@ class Annotation(Label):
                 subset_size = math.floor(len(all_labels) * anno_cfg['subset_size'])
             else:
                 subset_size = anno_cfg['subset_size']
-            print(f"cfg subset_size:{anno_cfg['subset_size']}, subset_size: {subset_size}")
+            logger.info(f"cfg subset_size:{anno_cfg['subset_size']}, subset_size: {subset_size}")
             label_subsets = fu.get_label_subsets(all_labels, subset_size, anno_cfg['repeat_num'])
             examples = None
             k_shot = anno_cfg['k_shot']
@@ -372,7 +374,7 @@ class Annotation(Label):
                 subset_size = math.floor(len(all_labels) * anno_cfg['subset_size'])
             else:
                 subset_size = anno_cfg['subset_size']
-            print(f"cfg subset_size:{anno_cfg['subset_size']}, subset_size: {subset_size}")
+            logger.info(f"cfg subset_size:{anno_cfg['subset_size']}, subset_size: {subset_size}")
             label_subsets = fu.get_label_subsets(all_labels, subset_size, anno_cfg['repeat_num'])
             examples = None
             k_shot = anno_cfg['k_shot']
@@ -590,7 +592,7 @@ class Annotation(Label):
         import openai
 
         try:
-            print('---------------')
+            logger.info('--------------- get response ---------------')
             completion = client.chat.completions.create(
                 model=self.api_cfg['model'],
                 messages=chat_message,
@@ -600,20 +602,15 @@ class Annotation(Label):
                 max_tokens=kwargs['max_tokens'],
             )
             output = completion.choices[0].message.content
-            print(output)
+            logger.debug(output)
         except openai.APIConnectionError as e:
-            print("openai.APIConnectionError")
-            print(e)
+            logger.error(f"openai.APIConnectionError: {e}")
         except openai.RateLimitError as e:
-            print("openai.RateLimitError")
-            print(e)
+            logger.error(f"openai.RateLimitError: {e}")
         except openai.APIStatusError as e:
-            print("openai.APIStatusError")
-            print(e)
-            print(e.status_code)
+            logger.error(f"openai.APIStatusError: {e}, status code: {e.status_code}")
         except Exception as e:
-            print("other exception")
-            print(e)
+            logger.error(f"other exception: {e}")
         return output
 
     def annotate_by_one(self,dataset, anno_cfg, **kwargs):
@@ -678,14 +675,14 @@ class Annotation(Label):
             annotator_name += '-{}'.format(kwargs['seed'])
         task_dir = os.path.join(label_format_dir, prompt_type_dir, label_des_dir, sub_samp_dir, dialogue_style_dir, model_name)
         res_cache_dir = os.path.join(cache_dir, task_dir, annotator_name)
-        print(f'result cache dir: {res_cache_dir}')
+        logger.info(f'result cache dir: {res_cache_dir}')
 
         try:
-            print(f'Trying to load cache file from {res_cache_dir}')
+            logger.info(f'Trying to load cache file from {res_cache_dir}')
             cache_result = load_from_disk(res_cache_dir)
             annotate_flag = False
         except FileNotFoundError:
-            print(f'No cache file found in {res_cache_dir}')
+            logger.info(f'No cache file found in {res_cache_dir}')
             if not os.path.exists(res_cache_dir):
                 os.makedirs(res_cache_dir)
 
@@ -961,8 +958,8 @@ class Annotation(Label):
             os.makedirs(res_cache_dir)
         res_file = os.path.join(res_cache_dir, '{}_res.txt'.format(kwargs['annotator_name']))
         res_by_class_file = os.path.join(res_cache_dir, '{}_res_by_class.csv'.format(kwargs['annotator_name']))
-        print(f'saved the evaluation results to {res_file}')
-        print(f'saved the evaluation results by class to {res_by_class_file}')
+        logger.info(f'saved the evaluation results to {res_file}')
+        logger.info(f'saved the evaluation results by class to {res_by_class_file}')
 
         # compute span-level metrics
         eval_results = fu.compute_span_f1(copy.deepcopy(y_true),  copy.deepcopy(y_pred))
@@ -991,14 +988,14 @@ class Annotation(Label):
         k_shot = anno_cfg['k_shot']
         outputs = []  # store all output labels for every instance
         if prompt_type == 'sc_fs':
-            print(f'subset_size: {anno_cfg["subset_size"]}, repeat_num: {anno_cfg["repeat_num"]}')
+            logger.info(f'subset_size: {anno_cfg["subset_size"]}, repeat_num: {anno_cfg["repeat_num"]}')
             if 0 < anno_cfg['subset_size'] < 1:
                 subset_size = math.floor(len(all_labels) * anno_cfg['subset_size'])
             else:
                 subset_size = anno_cfg['subset_size']
             label_subsets = fu.get_label_subsets(all_labels, subset_size, anno_cfg['repeat_num'])
         elif prompt_type == 'mt_fs':
-            print(f'demo_times: {anno_cfg["demo_times"]}')
+            logger.info(f'demo_times: {anno_cfg["demo_times"]}')
 
         if k_shot != 0:
             # get the support set file
@@ -1070,7 +1067,7 @@ class Annotation(Label):
         if not os.path.exists(res_cache_dir):
             os.makedirs(res_cache_dir)
         res_file = os.path.join(res_cache_dir, '{}_res.txt'.format(kwargs['annotator_name']))
-        print(f'write metrics ({res_file}) to excel')
+        logger.info(f'write metrics ({res_file}) to excel')
         with open(res_file, 'r') as f:
             eval_results = f.readlines()
 

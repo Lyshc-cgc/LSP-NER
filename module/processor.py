@@ -1,14 +1,16 @@
 import os
 import copy
 import random
-
 import math
 import jsonlines
 import multiprocess
+
 import module.func_util as fu
 from tqdm import tqdm
 from datasets import load_dataset, load_from_disk, Dataset
 from module.label import Label
+
+logger = fu.get_logger('Processor')
 
 class Processor(Label):
     """
@@ -38,6 +40,7 @@ class Processor(Label):
         span = []  # store tokens in a span
         pre_tag = 0  # the previous tag
         start, end = 0, 0  # the start/end index for a span
+
         while idx < len(tokens):
             tag = tags[idx]
             if tag != 0:
@@ -72,6 +75,8 @@ class Processor(Label):
         """
 
         # init the result
+        res_tokens = []  # store the tokens of the instances
+        res_tags = []  # store the tags of the instances
         res_spans_labels = []  # store the gold spans and labels of the instances
 
         # main process
@@ -98,19 +103,22 @@ class Processor(Label):
                 # element in gold_spans is in the shape of (str(start), str(end) (excluded), span)
                 # element in gold_spans_tags is tag id
                 # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, gold_label_id)...]
+
+                res_tokens.append(raw_tokens)
+                res_tags.append(raw_tags)
                 res_spans_labels.append([(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)])
             else:  # nested NER
                 sent, raw_tokens, starts, ends, raw_tags = instance
                 # 2.1.1 (optional) get the tag directly from the raw dataset
                 gold_spans = []  # store gold spans for this instance
                 for start, end, label_id in zip(starts, ends, raw_tags):
-                    # end position is exlucluded
+                    # end position is excluded
                     gold_spans.append((str(start), str(end), ' '.join(raw_tokens[start: end]), str(label_id)))
                 # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, gold_label_id)...]
                 res_spans_labels.append(gold_spans)
+                res_tokens.append(raw_tokens)
+                res_tags.append([])
 
-        res_tokens = instances[tokens_filed]
-        res_tags = instances[ner_tags_field] if not self.config['nested'] else [[] for _ in range(len(res_tokens))]
         return {
             'tokens': res_tokens,
             'tags': res_tags,
@@ -222,14 +230,14 @@ class Processor(Label):
             candidate_idx.update({label: tmp_ins})
 
         # 2. sample
-        print(f"Sampling {k_shot}-shot support set from {sample_split} split...")
+        logger.info(f"Sampling {k_shot}-shot support set from {sample_split} split...")
         for label in label_nums.keys():
             while counter[label] < k_shot:
                 idx = random.choice(candidate_idx[label])
                 support_set.add(idx)
                 candidate_idx[label].remove(idx)
                 counter = _update_counter(support_set, counter)
-                print(f'support set statistic: {counter}')
+                logger.info(f'support set statistic: {counter}')
 
         # 3. remove redundant instance
         raw_support_set = copy.deepcopy(support_set)
@@ -263,7 +271,7 @@ class Processor(Label):
         if sampling_strategy == 'random':
             if not seed or isinstance(seed, str):
                 seed = random.randint(0, 512)
-            print(f"Random sampling with seed {seed}...")
+            logger.info(f"Random sampling with seed {seed}...")
             # https://huggingface.co/docs/datasets/process#shuffle
             # use Dataset.flatten_indices() to rewrite the entire dataset on your disk again to remove the indices mapping
             dataset_subset = dataset.shuffle(seed=seed).flatten_indices().select(range(size))
@@ -315,16 +323,21 @@ class Processor(Label):
 
         # 1. check and load the cached formatted dataset
         try:
+            logger.info('Try to load the preprocessed dataset from the cache...')
             preprocessed_dataset = load_from_disk(preprocessed_dir)
         except FileNotFoundError:
-            # 2. format datasets to get span from scratch
+            # 2. format datasets
+            logger.info('No cache found, start to preprocess the dataset...')
             data_path = self.config['data_path'].format(dataset_name=self.config['dataset_name'])
             raw_dataset = load_dataset(data_path, num_proc=self.config['num_proc'], trust_remote_code=True)
-            preprocessed_dataset = raw_dataset.map(process_func,
-                                               batched=True,
-                                               batch_size=self.config['batch_size'],
-                                               num_proc=self.config['num_proc'],
-                                               )
+
+            tokens_filed, ner_tags_field = self.config['tokens_field'], self.config['ner_tags_field']
+            preprocessed_dataset = raw_dataset.filter(lambda x: len(x[tokens_filed]) == len(x[ner_tags_field]) )  # filter out those instances with different length of tokens and tags
+            preprocessed_dataset = preprocessed_dataset.map(process_func,
+                                                            batched=True,
+                                                            batch_size=self.config['batch_size'],
+                                                            num_proc=self.config['num_proc'],
+                                                            )
             # add index column
             preprocessed_dataset = preprocessed_dataset.map(lambda example, index: {"id": index}, with_indices=True)  # add index column
 
