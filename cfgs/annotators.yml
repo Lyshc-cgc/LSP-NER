@@ -11,10 +11,11 @@ Qwen1.5:
   anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
   repetition_penalty: 1  # set to 1 to avoid repetition penalty
   anno_bs: 20  # batch size for this model
-  dtype: auto  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-  gpu_memory_utilization: 0.8
+  dtype: half  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+  gpu_memory_utilization: 0.7
   stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
   tensor_parallel_size: 2
+  enable_chunked_prefill: False  # https://github.com/vllm-project/vllm/issues/6723, set explicitly enable_chunked_prefill to False For Volta GPU
 
 #-
 # name: Yi  # good
@@ -28,19 +29,22 @@ Qwen1.5:
 # anno_bs: 50  # batch size for this model
 # dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
 # gpu_memory_utilization: 0.9
-#
-#-
-# name: Mistral
-# chat: False
-# checkpoint: ckpt/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ
-#  # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-# anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-# anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
-# anno_max_tokens: 150 # maximum number of tokens to generate per output sequence.
-# repetition_penalty: 1  # set to 1 to avoid repetition penalty
-# anno_bs: 40  # batch size for this model
-# dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-# gpu_memory_utilization: 0.8
+
+Mistral:
+ name: Mistral
+ chat: False
+ checkpoint: ckpt/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ
+  # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
+ anno_temperature: 0.1  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
+ anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
+ anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
+ repetition_penalty: 1  # set to 1 to avoid repetition penalty
+ anno_bs: 20  # batch size for this model
+ dtype: half  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
+ gpu_memory_utilization: 0.7
+ stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
+ tensor_parallel_size: 2
+ enable_chunked_prefill: False  # https://github.com/vllm-project/vllm/issues/6723, set explicitly enable_chunked_prefill to False For Volta GPU
 
 #-
 # name: AquilaChat2  # good

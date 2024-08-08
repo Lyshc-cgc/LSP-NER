@@ -8,7 +8,7 @@ logger = fu.get_logger('run_script')
 def main():
     config = fu.get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'mit_restaurant'  # 'conll2003', 'ontonotes5', 'mit_restaurant', 'mit_movies'
+    dataset_name = 'conll2003'  # 'conll2003', 'ontonotes5', 'mit_restaurant', 'mit_movies'
     assert dataset_name in config['data_cfgs'].keys()
 
     # label form
@@ -28,8 +28,8 @@ def main():
     api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
 
     # local annotator
-    local_model = 'Qwen1.5'
-    assert local_model in ('Qwen1.5',)  # add more
+    local_model = 'Mistral'
+    assert local_model in ('Qwen1.5', 'Mistral')  # add more
     annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
 
     # 2.2 annotation prompt settings
@@ -53,7 +53,7 @@ def main():
 
     # 2.5 other testing settings
     ignore_sent_set = [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
-    label_mention_map_portions_set = [[1], [1, 0.75, 0.5, 0.25]]# [1, 0.75, 0.5, 0.25], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+    label_mention_map_portions_set = [[1], [1, 0.75, 0.5, 0.25]]# , the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
     repeat_num = 6
     seeds = [22, 32, 42]
     start_row = -1  # we set -1, because we don't want to write metrics to excel files when annotating

@@ -57,10 +57,13 @@ class Annotation(Label):
                 # if not use api, we employ local annotator using vllm
                 # https://docs.vllm.ai/en/latest/getting_started/quickstart.html
                 self.anno_model = LLM(model=annotator_cfg['checkpoint'],
-                                 tensor_parallel_size=annotator_cfg['tensor_parallel_size'],
-                                 dtype=annotator_cfg['dtype'],
-                                 gpu_memory_utilization=annotator_cfg['gpu_memory_utilization'],
-                                 trust_remote_code=True)
+                                      tensor_parallel_size=annotator_cfg['tensor_parallel_size'],
+                                      dtype=annotator_cfg['dtype'],
+                                      gpu_memory_utilization=annotator_cfg['gpu_memory_utilization'],
+                                      trust_remote_code=True,
+                                      # https://github.com/vllm-project/vllm/issues/6723
+                                      # set explicitly enable_chunked_prefill to False For Volta GPU
+                                      enable_chunked_prefill=False)
                 self.sampling_params = SamplingParams(temperature=annotator_cfg['anno_temperature'],
                                                  top_p=annotator_cfg['anno_top_p'],
                                                  max_tokens=annotator_cfg['anno_max_tokens'],
@@ -71,10 +74,11 @@ class Annotation(Label):
                 # anno_tokenizer = anno_model.llm_engine.tokenizer.tokenizer
                 self.anno_tokenizer = self.anno_model.get_tokenizer()
 
-    def _init_chat_msg_template(self, examples, anno_cfg, **kwargs) -> list[None | dict[str, str]]:
+    def _init_chat_msg_template(self, examples, annotator_cfg, anno_cfg, **kwargs) -> list[None | dict[str, str]]:
         """
         Init the chat messages template for the annotation models according to template settings.
         :param examples: the examples to be sho wn to annotators.
+        :param annotator_cfg: The parameters of the annotation model.
         :param anno_cfg: the configuration of the annotation settings
         :param kwargs: other arguments, including
             1) use_api, whether to use LLM API as annotator
@@ -147,11 +151,14 @@ class Annotation(Label):
 
         sys_prompt = anno_cfg['prompt_template'].format(**prompt_kwargs)
 
-        chat_message = [{"role": "system", "content": sys_prompt}]
-        if kwargs['use_api'] and self.api_cfg['model'] == 'qwen-long':
-            # see https://help.aliyun.com/document_detail/2788814.html?spm=a2c4g.2788811.0.0.1440240aUbuyYI#b7f81199e2laz
-            # when use qwen-long, we should add an extra system message for role-play to the chat_message
-            chat_message = [{'role': 'system', 'content': anno_cfg['system_role']}] + chat_message
+        if annotator_cfg['chat']:  # for qwen, it has 'system' role message
+            chat_message = [{"role": "system", "content": sys_prompt}]
+            if kwargs['use_api'] and self.api_cfg['model'] == 'qwen-long':
+                # see https://help.aliyun.com/document_detail/2788814.html?spm=a2c4g.2788811.0.0.1440240aUbuyYI#b7f81199e2laz
+                # when use qwen-long, we should add an extra system message for role-play to the chat_message
+                chat_message = [{'role': 'system', 'content': anno_cfg['system_role']}] + chat_message
+        else:  # for mistral, it doesn't have 'system' role message
+            chat_message = [{"role": "user", "content": sys_prompt}]
         return chat_message
 
     def _st_fs_msg(self, annotator_cfg, anno_cfg, **kwargs) -> list[None | dict[str, str]]:
@@ -223,12 +230,20 @@ class Annotation(Label):
                             examples += f'{index + 1})\n{instance}\n'
                             index += 1
                     chat_msg_template_list.append(
-                        self._init_chat_msg_template(examples, anno_cfg=anno_cfg, use_api=self.use_api, task_label=target_label)
+                        self._init_chat_msg_template(examples,
+                                                     annotator_cfg=annotator_cfg,
+                                                     anno_cfg=anno_cfg,
+                                                     use_api=self.use_api,
+                                                     task_label=target_label)
                     )
             else:
                 for target_label in all_labels:
                     chat_msg_template_list.append(
-                        self._init_chat_msg_template(examples, anno_cfg=anno_cfg, use_api=self.use_api, task_label=target_label)
+                        self._init_chat_msg_template(examples,
+                                                     annotator_cfg=annotator_cfg,
+                                                     anno_cfg=anno_cfg,
+                                                     use_api=self.use_api,
+                                                     task_label=target_label)
                     )
         return chat_msg_template_list
 
@@ -276,7 +291,7 @@ class Annotation(Label):
                     for instance in example_list:
                         examples += f'{index + 1})\n{instance}\n'
                         index += 1
-        return self._init_chat_msg_template(examples, anno_cfg=anno_cfg, use_api=self.use_api)
+        return self._init_chat_msg_template(examples, annotator_cfg=annotator_cfg, anno_cfg=anno_cfg, use_api=self.use_api)
 
     def _subset_type_fs_msg(self, annotator_cfg, anno_cfg, **kwargs):
         """
@@ -340,12 +355,22 @@ class Annotation(Label):
                             examples += f'{index + 1})\n{instance}\n'
                             index += 1
                     chat_msg_template_list.append(
-                        self._init_chat_msg_template(examples, anno_cfg=anno_cfg, use_api=self.use_api, labels=label_subset, dialogue_style=kwargs['dialogue_style'])
+                        self._init_chat_msg_template(examples,
+                                                     annotator_cfg=annotator_cfg,
+                                                     anno_cfg=anno_cfg,
+                                                     use_api=self.use_api,
+                                                     labels=label_subset,
+                                                     dialogue_style=kwargs['dialogue_style'])
                     )
             else:
                 for label_subset in label_subsets:
                     chat_msg_template_list.append(
-                        self._init_chat_msg_template(examples, anno_cfg=anno_cfg, use_api=self.use_api, labels=label_subset, dialogue_style=kwargs['dialogue_style'])
+                        self._init_chat_msg_template(examples,
+                                                     annotator_cfg=annotator_cfg,
+                                                     anno_cfg=anno_cfg,
+                                                     use_api=self.use_api,
+                                                     labels=label_subset,
+                                                     dialogue_style=kwargs['dialogue_style'])
                     )
 
         return chat_msg_template_list
@@ -414,14 +439,19 @@ class Annotation(Label):
                             instance = instance_template.format(sentence=sentence, output=output)
                             examples += f'{index + 1})\n{instance}\n'
                             index += 1
-        return self._init_chat_msg_template(examples, anno_cfg=anno_cfg, use_api=self.use_api, dialogue_style=kwargs['dialogue_style'])
+        return self._init_chat_msg_template(examples,
+                                            annotator_cfg=annotator_cfg,
+                                            anno_cfg=anno_cfg,
+                                            use_api=self.use_api,
+                                            dialogue_style=kwargs['dialogue_style'])
 
-    def _generate_chat_msg(self, instances, anno_cfg, chat_msg_template, anno_style, dialogue_style):
+    def _generate_chat_msg(self, instances, annotator_cfg, anno_cfg, chat_msg_template, anno_style, dialogue_style):
         """
         For batch chat.
         Generate chat messages for each instance. Meanwhile, init the labels for each instance.
 
         :param instances: The instances to be annotated.
+        :param annotator_cfg: The parameters of the annotation model.
         :param anno_cfg: the configuration of the annotation settings
         :param chat_msg_template: The chat message template for the annotating model.
         :param anno_style: The annotation style including 'single_type', 'multi_type', 'cand_mention_type', 'subset_type' or 'raw'
@@ -439,7 +469,12 @@ class Annotation(Label):
                         user_prompt = '\n### Query\n' + query
                     else:
                         user_prompt = query
-                    chat_message.append({"role": "user", "content": user_prompt})
+
+                    if annotator_cfg['chat']:
+                        chat_message.append({"role": "user", "content": user_prompt})
+                    else:
+                        user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
+                        chat_message[-1]["content"] = user_prompt  # replace the original user prompt
                     yield instance_id, chat_message, sentence
             elif anno_style == 'multi_type':
                 # generate chat message using the multi_type_prompt to extract entity directly by annotators
@@ -450,7 +485,12 @@ class Annotation(Label):
                     user_prompt = '\n### Query\n' + query
                 else:
                     user_prompt = query
-                chat_message.append({"role": "user", "content": user_prompt})
+
+                if annotator_cfg['chat']:
+                    chat_message.append({"role": "user", "content": user_prompt})
+                else:
+                    user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
+                    chat_message[-1]["content"] = user_prompt  # replace the original user prompt
                 yield instance_id, chat_message, sentence
             elif anno_style == 'subset_type':
                 # generate chat message using the subset types
@@ -464,7 +504,11 @@ class Annotation(Label):
                         user_prompt = '\n### Query\n' + query
                     else:
                         user_prompt = query
-                    chat_message.append({"role": "user", "content": user_prompt})
+                    if annotator_cfg['chat']:
+                        chat_message.append({"role": "user", "content": user_prompt})
+                    else:
+                        user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
+                        chat_message[-1]["content"] = user_prompt  # replace the original user prompt
                     yield instance_id, chat_message, sentence
             elif anno_style == 'subset_cand':
                 # generate chat message using the subset candidate prompt
@@ -476,7 +520,11 @@ class Annotation(Label):
                     user_prompt = '\n### Query\n' + query
                 else:
                     user_prompt = query
-                chat_message.append({"role": "user", "content": user_prompt})
+                if annotator_cfg['chat']:
+                    chat_message.append({"role": "user", "content": user_prompt})
+                else:
+                    user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
+                    chat_message[-1]["content"] = user_prompt  # replace the original user prompt
                 yield instance_id, chat_message, sentence
 
     @staticmethod
@@ -723,6 +771,7 @@ class Annotation(Label):
             else:
                 batch_size = self.annotator_cfg['anno_bs']
             pbar = tqdm(fu.batched(self._generate_chat_msg(instances=dataset,
+                                                           annotator_cfg=self.annotator_cfg,
                                                            anno_cfg=anno_cfg,
                                                            chat_msg_template=chat_msg_template,
                                                            anno_style=anno_style,
@@ -739,7 +788,6 @@ class Annotation(Label):
             for batch_id, batch in enumerate(pbar):
                 batch_spans = []  # store the span for each batch
                 batch_instance_ids = []  # store the instance ids for each batch
-                batch_labels = []  # store the gold labels for each batch
                 batch_chats = []  # store the chats for each batch
                 batch_sents = []  # store the sentences for each batch
                 batch_res_label_ids = []  # store the output label ids for each batch to evaluate
@@ -1073,8 +1121,9 @@ class Annotation(Label):
 
         metric_num = len(eval_results)  # the number of metrics
         if start_row == 2:  # it's a new worksheet
+            self.worksheet.write(0, 0, 'label_mention_map_portion')
             self.worksheet.write(0, 1, '5-shot')
-            self.worksheet.write(0, metric_num + 2, '1-shot')
+            self.worksheet.write(0, metric_num + 4, '1-shot')
             if anno_cfg['k_shot'] == 5:  # 5-shot
                 head_row, head_col = 1, 3  # headers start from (1, 3)
                 data_row, data_col = 2, 3  # datas start from (2, 3)

@@ -7,7 +7,7 @@ logger = fu.get_logger('test_scipt')
 def main():
     config = fu.get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'ontonotes5'  # 'conll2003', 'ontonotes5', 'ace2005'
+    dataset_name = 'mit_restaurant'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
     assert dataset_name in config['data_cfgs'].keys()
 
     # label form
@@ -28,12 +28,12 @@ def main():
 
     # local annotator
     local_model = 'Qwen1.5'
-    assert local_model in ('Qwen1.5',)  # add more
+    assert local_model in ('Qwen1.5', 'Mistral')  # add more
     annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
 
     # 2.2 annotation prompt settings
     prompt_type = 'sc_fs'
-    assert prompt_type in ('raw', 'mt_fs', 'raw_few_shot', 'st_few_shot', 'cand_mention_fs', 'sb_fs', 'sc_fs')
+    assert prompt_type in ('mt_fs', 'sc_fs')
 
     # 2.3 test subset sampling settings
     # 'random' for random sampling. Each instance has the same probability of being selected.
@@ -51,8 +51,8 @@ def main():
     assert dialogue_style in ('multi_qa', 'batch_qa')
 
     # 2.5 other testing settings
-    ignore_sent = True  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
-    label_mention_map_portions = [0.75, 0.5, 0.25]  # the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+    ignore_sent = False  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
+    label_mention_map_portions = [1]  # [1, 0.75, 0.5, 0.25] the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
     just_test=True  # for test, so skip to load the LLMs
     repeat_num = 6
     seeds = [22, 32, 42]  # [22, 32, 42], ['00', '01', '02']
@@ -72,8 +72,7 @@ def main():
     anno = Annotation(annotator_cfg,
                       api_cfg,
                       labels_cfg,
-                      just_test=just_test,
-                      label_mention_map_portions=label_mention_map_portions)
+                      just_test=just_test)
     for lmm_portion in label_mention_map_portions:
         for rep_num in range(repeat_num):
             for anno_cfg in anno_cfgs:
