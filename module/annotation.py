@@ -9,8 +9,8 @@ import xlsxwriter
 import jsonlines
 from vllm import LLM, SamplingParams
 from tenacity import retry, retry_if_exception_type, wait_random
-from openai import OpenAI, AsyncOpenAI
-from datasets import load_from_disk, Dataset, load_dataset
+from openai import OpenAI
+from datasets import load_from_disk, Dataset
 from tqdm import tqdm
 from module import func_util as fu
 from module.label import Label
@@ -590,8 +590,10 @@ class Annotation(Label):
             result = re.search(pattern, output_text, re.DOTALL)  # only find the first list string
             try:
                 tmp_spans = ast.literal_eval(result.group(0).strip())  # tmp_spans shapes like [(type 0, mention0),...]
-                tmp_spans = filter(lambda e: e and len(e) == 2, tmp_spans)  # filter the invalid spans
-            except Exception:  # the output_text is not valid
+                # filter the invalid spans
+                tmp_spans = filter(lambda e: isinstance(e, tuple), tmp_spans)
+                tmp_spans = filter(lambda e: e and len(e) == 2, tmp_spans)
+            except (TypeError, Exception):  # the output_text is not valid
                 pattern = r'\((.*?)\)'  # the pattern to extract a tuple
                 result = re.findall(pattern, output_text, re.DOTALL)  # find all the tuples
                 try:  # try to extract tuple directly
@@ -600,15 +602,17 @@ class Annotation(Label):
                         e = e.split(',')
                         if len(e) == 2:
                             tmp_spans.append((e[0].strip(), e[1].strip()))
-                    tmp_spans = filter(lambda e: e and len(e) == 2, tmp_spans)  # filter the invalid spans
-                except Exception:
+                    # filter the invalid spans
+                    tmp_spans = filter(lambda e: isinstance(e, tuple), tmp_spans)
+                    tmp_spans = filter(lambda e: e and len(e) == 2, tmp_spans)
+                except (TypeError, Exception):
                     tmp_spans = []
 
             for label, mention in tmp_spans:
-                founded_spans = fu.find_span(sentence, mention)
+                founded_spans = fu.find_span(sentence, str(mention))
                 out_spans += [(str(start), str(end), span, label) for start, end, span in set(founded_spans)]
             return out_spans
-        # kwargs['anno_style'] == 'raw', we extract the labelof the entity mention
+        # kwargs['anno_style'] == 'raw', we extract the label of the entity mention
         else:
             json_pattern = [r'\{(.*?)\}', r'\{\{(.*?)\}\}']  # the pattern to extract JSON string
             # kwargs['single_type_prompt'] is False, we classify the given entity mention in the output_text
@@ -715,10 +719,11 @@ class Annotation(Label):
             model_name = self.annotator_cfg['name']
         annotator_name =  model_name + '-' + anno_cfg['name']
 
-        if kwargs['ignore_sent']:
-            annotator_name += '-is'
-        if kwargs['label_mention_map_portion'] < 1:
-            annotator_name += '-lmp_{}'.format(kwargs['label_mention_map_portion'])
+        if anno_cfg['k_shot'] > 0:  # the 'ignore_sent' and 'label_mention_map_portion' is accessible when we use few-shot setting
+            if kwargs['ignore_sent']:
+                annotator_name += '-is'
+            if kwargs['label_mention_map_portion'] < 1:
+                annotator_name += '-lmp_{}'.format(kwargs['label_mention_map_portion'])
         if kwargs['seed']:
             annotator_name += '-{}'.format(kwargs['seed'])
         task_dir = os.path.join(label_format_dir, prompt_type_dir, label_des_dir, sub_samp_dir, dialogue_style_dir, model_name)
@@ -1012,9 +1017,10 @@ class Annotation(Label):
         # compute span-level metrics
         eval_results = fu.compute_span_f1(copy.deepcopy(y_true),  copy.deepcopy(y_pred))
         fu.compute_span_f1_by_labels(copy.deepcopy(y_true), copy.deepcopy(y_pred), id2label=self.id2label, res_file=res_by_class_file)
-        lspi, lc = self.get_lspi_lc(kwargs['dataset'], anno_cfg, kwargs['dataset_name'], prompt_type=kwargs['prompt_type'])
-        eval_results['lspi'] = lspi
-        eval_results['lc'] = lc
+        if anno_cfg['k_shot'] > 0:  # LSPI and LC are only available for few-shot setting
+            lspi, lc = self.get_lspi_lc(kwargs['dataset'], anno_cfg, kwargs['dataset_name'], prompt_type=kwargs['prompt_type'])
+            eval_results['lspi'] = lspi
+            eval_results['lc'] = lc
         with open(res_file, 'w') as f:
             for metric, res in eval_results.items():
                 f.write(f'{metric}: {res}\n')
@@ -1042,8 +1048,6 @@ class Annotation(Label):
             else:
                 subset_size = anno_cfg['subset_size']
             label_subsets = fu.get_label_subsets(all_labels, subset_size, anno_cfg['repeat_num'])
-        elif prompt_type == 'mt_fs':
-            logger.info(f'demo_times: {anno_cfg["demo_times"]}')
 
         if k_shot != 0:
             # get the support set file

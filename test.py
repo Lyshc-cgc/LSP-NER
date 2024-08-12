@@ -7,7 +7,7 @@ logger = fu.get_logger('test_scipt')
 def main():
     config = fu.get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'mit_restaurant'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
+    dataset_name = 'conll2003'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
     assert dataset_name in config['data_cfgs'].keys()
 
     # label form
@@ -27,12 +27,12 @@ def main():
     api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
 
     # local annotator
-    local_model = 'Qwen1.5'
+    local_model = 'Mistral'
     assert local_model in ('Qwen1.5', 'Mistral')  # add more
     annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
 
     # 2.2 annotation prompt settings
-    prompt_type = 'sc_fs'
+    prompt_type = 'mt_fs'
     assert prompt_type in ('mt_fs', 'sc_fs')
 
     # 2.3 test subset sampling settings

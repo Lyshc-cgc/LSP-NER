@@ -8,7 +8,7 @@ logger = fu.get_logger('run_script')
 def main():
     config = fu.get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'conll2003'  # 'conll2003', 'ontonotes5', 'mit_restaurant', 'mit_movies'
+    dataset_name = 'ontonotes5'  # 'conll2003', 'ontonotes5', 'mit_restaurant', 'mit_movies'
     assert dataset_name in config['data_cfgs'].keys()
 
     # label form
@@ -52,8 +52,8 @@ def main():
     assert dialogue_style in ('multi_qa', 'batch_qa')
 
     # 2.5 other testing settings
-    ignore_sent_set = [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
-    label_mention_map_portions_set = [[1], [1, 0.75, 0.5, 0.25]]# , the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+    ignore_sent_set = [False, True] # [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
+    label_mention_map_portions_set = [[1],[1, 0.75, 0.5, 0.25]]# [1, 0.75, 0.5, 0.25], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
     repeat_num = 6
     seeds = [22, 32, 42]
     start_row = -1  # we set -1, because we don't want to write metrics to excel files when annotating
@@ -81,9 +81,9 @@ def main():
                             logger.info(f'ignore sentence: {ignore_sent}')
                             logger.info(f'label-mention map portion: {label_mention_map_portion}')
                             if prompt_type == 'mt_fs':
-                                logger.info(f'demo_times: {repeat_num}')
+                                logger.info('demo_times: {}'.format(anno_cfg['demo_times']))
                             elif prompt_type == 'sc_fs':
-                                logger.info(f'repeat num: {repeat_num}')
+                                logger.info('repeat num: {}'.format(anno_cfg['repeat_num']))
 
                             if test_subset_size > 0:
                                 dataset_subset = proc.subset_sampling(dataset, test_subset_size, sampling_strategy, seed)

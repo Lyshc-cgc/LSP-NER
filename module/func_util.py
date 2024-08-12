@@ -247,18 +247,18 @@ def compute_span_f1_by_labels(gold_spans, pred_spans, id2label, res_file):
     # cache the results
     df_metrics.to_csv(res_file, index=False)
 
-def find_span(text, span):
+def find_span(text: str, span: str):
     """
     Find the span in the text.
     :param text: str, the text.
-    :param span: the mention.
+    :param span: str, the mention.
     :return: list, the list of spans.
     """
     if not span:
         return []
     res_spans = []
     # Find the start character index and end character index of the first matched span.
-    re_span = re.escape(span)  # escape special characters in the span
+    re_span = re.escape(str(span))  # escape special characters in the span
     pattern_0 = r"\b(" + re_span + r")\b"  # match the whole span after escaping special characters
     pattern_1 = r"\s(" + re_span + r")\s"  # match the span surrounded by spaces after escaping special characters
     patterns = [pattern_0, pattern_1]
