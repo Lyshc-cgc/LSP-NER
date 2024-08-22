@@ -1,0 +1,39 @@
+labels:
+  DNA:
+    natural: DNA
+    description: >-
+      indicates "deoxyribonucleic acid". DNA is an acid in the chromosomes in the centre of the cells of living things. 
+      DNA determines the particular structure and functions of every cell and is responsible for characteristics being 
+      passed on from parents to their children.
+
+  RNA:
+    natural: RNA
+    description: >-
+      indicates "ribonucleic acid". RNA is an acid in the chromosomes of the cells of living things which plays an 
+      important part in passing information about protein structure between different cells.
+
+  protein:
+    natural: protein
+    description: >-
+      indicates "protein". Proteins are a large class of biological molecules consisting of chains of amino acids called 
+      polypeptides. A single polypeptide can make a protein, although many proteins consists of multiple polypeptide subunits.
+
+  cell_type:
+    natural: cell type
+    description: >-
+      indicates "cell type". a cell type is a classification used to distinguish between morphologically or 
+      phenotypically distinct cell forms within a species. 
+
+  cell_line:
+    natural: cell line
+    description: >-
+      indicates "cell line". a clone of animal or plant cells that can be grown in a suitable nutrient culture medium in the laboratory
+
+raw_bio: False  # a flag to indicate whether the labels are in BIO format in the raw dataset.(data/*/raw/*)
+raw_label2id:  # the label2id mapping in the raw datasets. (data/*/raw/*)
+  'O': 0,
+  'DNA': 1,
+  'RNA': 2,
+  'protein': 3,
+  'cell_type': 4,
+  'cell_line': 5,

@@ -964,6 +964,7 @@ class Annotation(Label):
                 }
 
             cache_result = Dataset.from_dict(cache_result)
+            logger.info(f'Save cache result to {res_cache_dir}')
             if kwargs['cache']:
                 cache_result.save_to_disk(res_cache_dir)
 

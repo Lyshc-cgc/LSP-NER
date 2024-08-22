@@ -8,7 +8,7 @@ logger = fu.get_logger('run_script')
 def main():
     config = fu.get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'ontonotes5'  # 'conll2003', 'ontonotes5', 'mit_restaurant', 'mit_movies'
+    dataset_name = 'genia'  # 'conll2003', 'ontonotes5', 'mit_restaurant', 'mit_movies', 'genia'
     assert dataset_name in config['data_cfgs'].keys()
 
     # label form
@@ -24,12 +24,12 @@ def main():
     # api annotator
     use_api = False
     api_model = 'gpt'
-    assert api_model in ('qwen', 'deepseek', 'glm', 'gpt')
+    assert api_model in {'qwen', 'deepseek', 'glm', 'gpt'}
     api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
 
     # local annotator
     local_model = 'Mistral'
-    assert local_model in ('Qwen1.5', 'Mistral')  # add more
+    assert local_model in {'Qwen1.5', 'Mistral'}  # add more
     annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
 
     # 2.2 annotation prompt settings
@@ -43,13 +43,13 @@ def main():
     # 'shot_sample' for sampling test set like k-shot sampling. Each label has at least k instances.
     test_subset_size = 200
     sampling_strategy = 'random'
-    assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample')
+    assert sampling_strategy in {'random', 'lab_uniform', 'proportion', 'shot_sample'}
 
     # 2.4 dialogue style settings
     # 'multi-qa' for multi-turn QA, we concatenate the output of the previous turn with the input of the current turn.
     # 'batch-qa' for batch QA, we use new context for each query.
     dialogue_style = 'batch_qa'
-    assert dialogue_style in ('multi_qa', 'batch_qa')
+    assert dialogue_style in {'multi_qa', 'batch_qa'}
 
     # 2.5 other testing settings
     ignore_sent_set = [False, True] # [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
@@ -59,7 +59,7 @@ def main():
     start_row = -1  # we set -1, because we don't want to write metrics to excel files when annotating
 
     anno = Annotation(annotator_cfg, api_cfg, labels_cfg)
-    for prompt_type in ('mt_fs', 'sc_fs'):
+    for prompt_type in {'mt_fs', 'sc_fs'}:  # {'mt_fs', 'sc_fs'}
         anno_cfg_paths = config['anno_cfgs'][prompt_type]
         anno_cfgs = [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
         for ignore_sent, label_mention_map_portions in zip(ignore_sent_set, label_mention_map_portions_set):

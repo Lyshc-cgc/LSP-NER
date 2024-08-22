@@ -1,15 +1,15 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
 
-dataset_name: mit_movies
-data_path: data/{dataset_name}/mit_movies
+dataset_name: genia
+data_path: data/{dataset_name}/genia_ner.py
 num_proc: 4
-nested: False  # whether the entities are nested
+nested: True  # whether the entities are nested
 
 # process config
 tokens_field: tokens  # the field name of the tokens, please make sure the field name is consistent with the data
 ner_tags_field: ner_tags  # the field name of the NER tag, please make sure the field name is consistent with the data
 batch_size: 4096 # batch size for data processing
-split: validation  # train, validation
+split: test  # train, dev, test
 shuffle: True  # whether to shuffle the data
 preprocessed_dir: data/{dataset_name}/preprocess  # the directory to store the preprocessed data
 continue: True  # whether to continue to use the data last time

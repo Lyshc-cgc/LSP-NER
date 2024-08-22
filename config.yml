@@ -7,6 +7,7 @@ data_cfgs:
   conll2003: cfgs/data_cfgs/conll2003.yml
   mit_restaurant: cfgs/data_cfgs/mit_restaurant.yml
   mit_movies: cfgs/data_cfgs/mit_movies.yml
+  genia: cfgs/data_cfgs/genia.yml
 
 # annotation config
 anno_cfgs:
@@ -34,6 +35,7 @@ label_cfgs:
   conll2003: cfgs/label_cfgs/conll2003.yml
   mit_restaurant: cfgs/label_cfgs/mit_restaurant.yml
   mit_movies: cfgs/label_cfgs/mit_movies.yml
+  genia: cfgs/label_cfgs/genia.yml
 
 # annotators config
 annotators_cfg: cfgs/annotators.yml

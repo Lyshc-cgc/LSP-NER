@@ -329,15 +329,17 @@ class Processor(Label):
             # 2. format datasets
             logger.info('No cache found, start to preprocess the dataset...')
             data_path = self.config['data_path'].format(dataset_name=self.config['dataset_name'])
-            raw_dataset = load_dataset(data_path, num_proc=self.config['num_proc'], trust_remote_code=True)
+            # raw dataset
+            preprocessed_dataset = load_dataset(data_path, num_proc=self.config['num_proc'], trust_remote_code=True)
 
             tokens_filed, ner_tags_field = self.config['tokens_field'], self.config['ner_tags_field']
-            preprocessed_dataset = raw_dataset.filter(lambda x: len(x[tokens_filed]) == len(x[ner_tags_field]) )  # filter out those instances with different length of tokens and tags
+            if not self.config['nested']:
+                # for those flat datasets, we need to filter out those instances with different length of tokens and tags
+                preprocessed_dataset = preprocessed_dataset.filter(lambda x: len(x[tokens_filed]) == len(x[ner_tags_field]) )
             preprocessed_dataset = preprocessed_dataset.map(process_func,
                                                             batched=True,
                                                             batch_size=self.config['batch_size'],
-                                                            num_proc=self.config['num_proc'],
-                                                            )
+                                                            num_proc=self.config['num_proc'])
             # add index column
             preprocessed_dataset = preprocessed_dataset.map(lambda example, index: {"id": index}, with_indices=True)  # add index column
 
