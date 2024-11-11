@@ -11,7 +11,7 @@ data_cfgs:
 
 # annotation config
 anno_cfgs:
-  st_few_shot:  # LLM recognize entities given single type, few-shot setting
+  st_fs:  # LLM recognize entities given single type, few-shot setting
     - cfgs/single_type/anno_cfg_st_fs_5.yml
     - cfgs/single_type/anno_cfg_st_fs_1.yml
   mt_fs:  # multi-type prompt, few-shot setting

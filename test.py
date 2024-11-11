@@ -7,7 +7,7 @@ logger = fu.get_logger('test_scipt')
 def main():
     config = fu.get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'conll2003'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
+    dataset_name = 'ontonotes5'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
     assert dataset_name in config['data_cfgs'].keys()
 
     # label form
@@ -23,17 +23,17 @@ def main():
     # api annotator
     use_api = False
     api_model = 'gpt'
-    assert api_model in ('qwen', 'deepseek', 'glm', 'gpt')
+    assert api_model in {'qwen', 'deepseek', 'glm', 'gpt'}
     api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
 
     # local annotator
-    local_model = 'Mistral'
-    assert local_model in ('Qwen1.5', 'Mistral')  # add more
+    local_model = 'Qwen1.5'  # Mistral, Qwen1.5
+    assert local_model in {'Qwen1.5', 'Mistral'}  # add more
     annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
 
     # 2.2 annotation prompt settings
-    prompt_type = 'mt_fs'
-    assert prompt_type in ('mt_fs', 'sc_fs')
+    prompt_type = 'sc_fs'
+    assert prompt_type in {'mt_fs', 'sc_fs'}
 
     # 2.3 test subset sampling settings
     # 'random' for random sampling. Each instance has the same probability of being selected.
@@ -42,17 +42,17 @@ def main():
     # 'shot_sample' for sampling test set like k-shot sampling. Each label has at least k instances.
     test_subset_size = 200
     sampling_strategy = 'random'
-    assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample')
+    assert sampling_strategy in {'random', 'lab_uniform', 'proportion', 'shot_sample'}
 
     # 2.4 dialogue style settings
     # 'multi-qa' for multi-turn QA, we concatenate the output of the previous turn with the input of the current turn.
     # 'batch-qa' for batch QA, we use new context for each query.
     dialogue_style = 'batch_qa'
-    assert dialogue_style in ('multi_qa', 'batch_qa')
+    assert dialogue_style in {'multi_qa', 'batch_qa'}
 
     # 2.5 other testing settings
-    ignore_sent = False  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
-    label_mention_map_portions = [1]  # [1, 0.75, 0.5, 0.25] the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+    ignore_sent = True  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
+    label_mention_map_portions = [1, 0.75, 0.5, 0.25]  # [1, 0.75, 0.5, 0.25] the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
     just_test=True  # for test, so skip to load the LLMs
     repeat_num = 6
     seeds = [22, 32, 42]  # [22, 32, 42], ['00', '01', '02']

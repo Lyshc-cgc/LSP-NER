@@ -1,5 +1,5 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: st-1-shot-00
+name: st-1-shot
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 support_set_dir: data/{dataset_name}/support_set  # support set directory

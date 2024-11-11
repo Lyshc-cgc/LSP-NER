@@ -3,14 +3,14 @@
 Qwen1.5:
   name: Qwen1.5  # the name of the configuration
   chat: False
-  checkpoint: ckpt/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint for local inference
+  checkpoint: model/Qwen/Qwen1.5-32B-Chat-GPTQ-Int4  # your path to the model checkpoint for local inference
   # qwen has system prompt. We can input the examples in a form of chatting
   # https://huggingface.co/Qwen/Qwen1.5-14B-Chat#quickstart
   anno_temperature: 0.1  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
   anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
   anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
   repetition_penalty: 1  # set to 1 to avoid repetition penalty
-  anno_bs: 20  # batch size for this model
+  anno_bs: 5  # batch size for this model
   dtype: half  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
   gpu_memory_utilization: 0.7
   stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
@@ -33,13 +33,13 @@ Qwen1.5:
 Mistral:
  name: Mistral
  chat: False
- checkpoint: ckpt/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ
+ checkpoint: model/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ
   # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
  anno_temperature: 0.1  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
  anno_top_p: 0.5  # top_p for this model. The smaller the value, the more deterministic the model output is.
  anno_max_tokens: 100  # maximum number of tokens to generate per output sequence.
  repetition_penalty: 1  # set to 1 to avoid repetition penalty
- anno_bs: 20  # batch size for this model
+ anno_bs: 5  # batch size for this model
  dtype: half  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
  gpu_memory_utilization: 0.7
  stream: False  # if True, the model will be used in stream mode. This is useful for chat models.
