@@ -1,3 +1,4 @@
+import math
 import random
 import re
 import yaml
@@ -284,11 +285,16 @@ def get_label_subsets(labels, sub_size, repeat_num=1, fixed_subsets=None):
     """
     Get the subsets of the labels.
     :param labels: list, the list of labels.
-    :param sub_size: int, the size of the subset.
+    :param sub_size: int or float (<1), the size of the label subset.
     :param repeat_num: the number of times to repeat each label.
     :param fixed_subsets: a list of lists or tuples, the fixed subsets. we randomly sample the rest of the labels. e.g., [['PER', 'ORG'], ['LOC', 'GPE'],...]
     :return: list, the list of subsets.
     """
+    if 0 < sub_size < 1:
+        sub_size = math.floor(len(labels) * sub_size)
+        if sub_size < 1:
+            sub_size = 1
+
     label_subsets = []
     for _ in range(repeat_num):
         random.shuffle(labels)

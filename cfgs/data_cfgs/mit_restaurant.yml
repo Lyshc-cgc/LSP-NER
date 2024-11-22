@@ -17,7 +17,9 @@ continue_dir: data/{dataset_name}/continue  # the directory to store the continu
 
 support_set: True  # whether to sample support set
 k_shot:  # the number of examples for each label in the training set
+  - 7
   - 5
+  - 3
   - 1
 sample_split: train  # the dataset split you want to sample support set from.
 ss_cache_dir: data/{dataset_name}/support_set  # the directory to store the support set cache

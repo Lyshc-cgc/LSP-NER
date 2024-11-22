@@ -5,8 +5,8 @@ import random
 import re
 import os
 import xlsxwriter
-
 import jsonlines
+
 from vllm import LLM, SamplingParams
 from tenacity import retry, retry_if_exception_type, wait_random
 from openai import OpenAI
@@ -87,6 +87,7 @@ class Annotation(Label):
             4) task_label, specify the label in the task prompt, this is used for single_type_prompt
         :return:
         """
+        prompt_template = anno_cfg['prompt_template']
         # 0. examples
         if examples:
             examples_prompt = f"Here are some examples to help you understand the task better:\n ### Examples \n {examples}\n"
@@ -96,17 +97,17 @@ class Annotation(Label):
 
         # 1. system role
         system_role = ''
-        if 'system_role' in anno_cfg.keys() and anno_cfg['system_role']:
-            system_role = anno_cfg['system_role'] + '\n'
+        if 'system_role' in prompt_template.keys() and prompt_template['system_role']:
+            system_role = prompt_template['system_role'] + '\n'
         prompt_kwargs.update({'system_role': system_role})
 
         # 2. task prompt
         task_prompt = ''
-        if 'task_prompt' in anno_cfg.keys() and anno_cfg['task_prompt']:
-            if isinstance(anno_cfg['task_prompt'], dict):
-                task_prompt = anno_cfg['task_prompt'][kwargs['dialogue_style']]
+        if 'task_prompt' in prompt_template.keys() and prompt_template['task_prompt']:
+            if isinstance(prompt_template['task_prompt'], dict):
+                task_prompt = prompt_template['task_prompt'][kwargs['dialogue_style']]
             else:
-                task_prompt = anno_cfg['task_prompt']
+                task_prompt = prompt_template['task_prompt']
 
             if 'task_label' in kwargs.keys():
                 task_label = kwargs['task_label']
@@ -116,7 +117,7 @@ class Annotation(Label):
 
         # 3. types prompt
         types_prompt = ''
-        if 'types_prompt' in anno_cfg.keys() and anno_cfg['types_prompt']:
+        if 'types_prompt' in prompt_template.keys() and prompt_template['types_prompt']:
             types_string = ''
             if 'labels' in kwargs.keys():
                 labels = kwargs['labels']
@@ -144,19 +145,19 @@ class Annotation(Label):
 
         # 4. guidelines prompt
         guidelines_prompt = ''
-        if 'guidelines' in anno_cfg.keys() and anno_cfg['guidelines']:
-            guidelines = anno_cfg['guidelines']
+        if 'guidelines' in prompt_template.keys() and prompt_template['guidelines']:
+            guidelines = prompt_template['guidelines']
             guidelines_prompt = f"In your annotation process, please follow these guidelines: \n ### Guidelines \n {guidelines}\n"
         prompt_kwargs.update({'guidelines': guidelines_prompt})
 
-        sys_prompt = anno_cfg['prompt_template'].format(**prompt_kwargs)
+        sys_prompt = prompt_template['prompt_template'].format(**prompt_kwargs)
 
         if annotator_cfg['chat']:  # for chat model like qwen, it has 'system' role message
             chat_message = [{"role": "system", "content": sys_prompt}]
             if kwargs['use_api'] and self.api_cfg['model'] == 'qwen-long':
                 # see https://help.aliyun.com/document_detail/2788814.html?spm=a2c4g.2788811.0.0.1440240aUbuyYI#b7f81199e2laz
                 # when use qwen-long, we should add an extra system message for role-play to the chat_message
-                chat_message = [{'role': 'system', 'content': anno_cfg['system_role']}] + chat_message
+                chat_message = [{'role': 'system', 'content': prompt_template['system_role']}] + chat_message
         else:  # for non-chat models like mistral, it doesn't have 'system' role message
             chat_message = [{"role": "user", "content": sys_prompt}]
         return chat_message
@@ -186,6 +187,7 @@ class Annotation(Label):
             if k_shot != 0:
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
                 k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                prompt_template = anno_cfg['prompt_template']
 
                 for target_label in all_labels:  # init examples and system messages for each label
                     examples = ''
@@ -218,7 +220,7 @@ class Annotation(Label):
                                     pre_end = end
                                 output += line['tokens'][pre_end:]  # add the rest tokens, or line['tokens'][end:]
                                 output = '"' + ' '.join(output) + '"'
-                                instance = anno_cfg['instance_template'].format(label=label, sentence=sentence, output=output)
+                                instance = prompt_template['instance_template'].format(label=label, sentence=sentence, output=output)
                                 examples += f'{index + 1})\n{instance}\n'
                                 index += 1
                             else:  # no gold mentions
@@ -228,7 +230,7 @@ class Annotation(Label):
                         select_num = 3 if len(empty_sents) > 3 else len(empty_sents)
                         for sentence in random.sample(empty_sents, select_num):
                             output = '"' + sentence + '"'
-                            instance = anno_cfg['instance_template'].format(sentence=sentence, output=output)
+                            instance = prompt_template['instance_template'].format(sentence=sentence, output=output)
                             examples += f'{index + 1})\n{instance}\n'
                             index += 1
                     chat_msg_template_list.append(
@@ -270,6 +272,7 @@ class Annotation(Label):
                 # read all examples from the support set
                 example_list = []
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
+                prompt_template = anno_cfg['prompt_template']
 
                 k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
                 with jsonlines.open(k_shot_file) as reader:
@@ -283,7 +286,7 @@ class Annotation(Label):
                             label = self.id2label[int(label_id)]
                             output += f'("{label}", "{entity_mention}"),'
                         output += ']'
-                        instance = anno_cfg['instance_template'].format(sentence=sentence, output=output)
+                        instance = prompt_template['instance_template'].format(sentence=sentence, output=output)
                         example_list.append(instance)
 
                 index = 0
@@ -315,12 +318,8 @@ class Annotation(Label):
             all_labels = list(self.label2id.keys())
             if 'O' in all_labels:
                 all_labels.remove('O')
-            if 0 < anno_cfg['subset_size'] < 1:
-                subset_size = math.floor(len(all_labels) * anno_cfg['subset_size'])
-            else:
-                subset_size = anno_cfg['subset_size']
-            logger.info(f"cfg subset_size:{anno_cfg['subset_size']}, subset_size: {subset_size}")
-            label_subsets = fu.get_label_subsets(all_labels, subset_size, anno_cfg['repeat_num'])
+
+            label_subsets = fu.get_label_subsets(all_labels, anno_cfg['subset_size'], anno_cfg['repeat_num'])
             examples = None
             k_shot = anno_cfg['k_shot']
             chat_msg_template_list = []  # store the chat message template for each label subset
@@ -328,7 +327,7 @@ class Annotation(Label):
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
                 k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}',f'train_support_set_{k_shot}_shot.jsonl')
 
-                instance_template = anno_cfg['instance_template'][kwargs['dialogue_style']]
+                instance_template = anno_cfg['prompt_template']['instance_template'][kwargs['dialogue_style']]
                 for label_subset in label_subsets:
                     examples = ''
                     index = 0  # example index
@@ -401,9 +400,11 @@ class Annotation(Label):
                 all_labels.remove('O')
             if 0 < anno_cfg['subset_size'] < 1:
                 subset_size = math.floor(len(all_labels) * anno_cfg['subset_size'])
+                if subset_size < 1:
+                    subset_size = 1
             else:
                 subset_size = anno_cfg['subset_size']
-            logger.info(f"cfg subset_size:{anno_cfg['subset_size']}, subset_size: {subset_size}")
+
             label_subsets = fu.get_label_subsets(all_labels, subset_size, anno_cfg['repeat_num'])
             examples = None
             k_shot = anno_cfg['k_shot']
@@ -411,7 +412,7 @@ class Annotation(Label):
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
                 k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}',f'train_support_set_{k_shot}_shot.jsonl')
 
-                instance_template = anno_cfg['instance_template'][kwargs['dialogue_style']]
+                instance_template = anno_cfg['prompt_template']['instance_template'][kwargs['dialogue_style']]
                 examples = ''
                 index = 0
                 for label_subset in label_subsets:
@@ -462,6 +463,7 @@ class Annotation(Label):
         :param dialogue_style, the style of the dialogue 'batch_qa' or 'multi_qa'
         :return:
         """
+        prompt_template = anno_cfg['prompt_template']
         for instance_id, tokens, spans_labels in zip(instances['id'], instances['tokens'], instances['spans_labels']):
             if anno_style == 'single_type':
                 # generate chat message using the single_type_prompt to extract entity directly by annotators
@@ -470,7 +472,7 @@ class Annotation(Label):
                 for chat_msg_temp in chat_msg_template:
                     sentence = ' '.join(tokens)
                     chat_message = copy.deepcopy(chat_msg_temp)
-                    query = anno_cfg['instance_template'].format(sentence=sentence, output='')
+                    query = prompt_template['instance_template'].format(sentence=sentence, output='')
                     if dialogue_style == 'batch_qa':
                         user_prompt = '\n### Query\n' + query
                     else:
@@ -486,7 +488,7 @@ class Annotation(Label):
                 # generate chat message using the multi_type_prompt to extract entity directly by annotators
                 sentence = ' '.join(tokens)
                 chat_message = copy.deepcopy(chat_msg_template)
-                query = anno_cfg['instance_template'].format(sentence=sentence, output='')
+                query = prompt_template['instance_template'].format(sentence=sentence, output='')
                 if dialogue_style == 'batch_qa':
                     user_prompt = '\n### Query\n' + query
                 else:
@@ -501,7 +503,7 @@ class Annotation(Label):
             elif anno_style == 'subset_type':
                 # generate chat message using the subset types
                 # In this case, the chat msg template is a list of chat message template for each label subset
-                instance_template = anno_cfg['instance_template'][dialogue_style]
+                instance_template = prompt_template['instance_template'][dialogue_style]
                 for chat_msg_temp in chat_msg_template:
                     chat_message = copy.deepcopy(chat_msg_temp)
                     sentence = ' '.join(tokens)
@@ -518,7 +520,7 @@ class Annotation(Label):
                     yield instance_id, chat_message, sentence, query
             elif anno_style == 'subset_cand':
                 # generate chat message using the subset candidate prompt
-                instance_template = anno_cfg['instance_template'][dialogue_style]
+                instance_template = prompt_template['instance_template'][dialogue_style]
                 chat_message = copy.deepcopy(chat_msg_template)
                 sentence = ' '.join(tokens)
                 query = instance_template.format(sentence=sentence, output='')
@@ -836,7 +838,6 @@ class Annotation(Label):
                         # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
                         templated_batch_chats = self.anno_tokenizer.apply_chat_template(batch_chats, add_generation_prompt=True,tokenize=False)
                         outputs = self.anno_model.generate(templated_batch_chats, self.sampling_params)  # annotate
-
                         # for test
                         # test_answer = []
                         # for output in outputs:
@@ -1065,11 +1066,7 @@ class Annotation(Label):
         outputs = []  # store all output labels for every instance
         if prompt_type == 'sc_fs':
             logger.info(f'subset_size: {anno_cfg["subset_size"]}, repeat_num: {anno_cfg["repeat_num"]}')
-            if 0 < anno_cfg['subset_size'] < 1:
-                subset_size = math.floor(len(all_labels) * anno_cfg['subset_size'])
-            else:
-                subset_size = anno_cfg['subset_size']
-            label_subsets = fu.get_label_subsets(all_labels, subset_size, anno_cfg['repeat_num'])
+            label_subsets = fu.get_label_subsets(all_labels, anno_cfg['subset_size'], anno_cfg['repeat_num'])
 
         if k_shot != 0:
             # get the support set file

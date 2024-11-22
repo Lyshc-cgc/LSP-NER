@@ -1,8 +1,9 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: st-1-shot
+name: mt-7-shot # the name of the configuration
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 support_set_dir: data/{dataset_name}/support_set  # support set directory
-k_shot: 1  # whether to use few-shot setting
+k_shot: 7  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
 des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
-prompt_template_dir: cfgs/single_type/prompt_template.yml  # prompt template file
+demo_times: 5  # the number of times to repeat each demonstration. default 1
+prompt_template_dir: cfgs/multi_type/prompt_template.yml  # prompt template file

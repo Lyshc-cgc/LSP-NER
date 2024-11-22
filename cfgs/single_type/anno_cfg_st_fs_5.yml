@@ -5,23 +5,5 @@ eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 support_set_dir: data/{dataset_name}/support_set  # support set directory
 k_shot: 5  # whether to use few-shot setting
 des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
+prompt_template_dir: cfgs/single_type/prompt_template.yml  # prompt template file
 
-prompt_template: >-
-  {system_role}
-  {task_prompt}
-  {types_prompt}
-  {guidelines}
-  {examples_prompt}
-
-system_role: >-
-  You are a professional and helpful crowdsourcing data annotator using English with the help of description of types.
-
-task_prompt: >-
-  Your task is to identify all '{task_label}' named entities in the sentence.
-  Your output should be a sentence with the entity mention marked with the "@@" and "##" symbols, where "@@" marks the 
-  start of the entity and "##" marks the end of the entity. 
-  If there is no suitable entity mention in the sentence, you just only repeat the sentence.
-types_prompt: True
-instance_template: >-
-  sentence: "{sentence}"
-  output: {output}
