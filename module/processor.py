@@ -299,7 +299,6 @@ class Processor(Label):
             dataset_subset = dataset.select(choice_indices)
 
         elif sampling_strategy == 'shot_sample':
-            # todo, debug and cache the shot sample
             support_set, counter = self.support_set_sampling(dataset, k_shot=20, sample_split='train')
             dataset_subset = dataset.select(list(support_set))
 

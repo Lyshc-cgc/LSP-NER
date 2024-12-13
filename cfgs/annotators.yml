@@ -17,18 +17,6 @@ Qwen1.5:
   tensor_parallel_size: 2
   enable_chunked_prefill: False  # https://github.com/vllm-project/vllm/issues/6723, set explicitly enable_chunked_prefill to False For Volta GPU
 
-#-
-# name: Yi  # good
-# chat: False
-# checkpoint: ckpt/01-ai/Yi-34B-Chat-8bits # https://huggingface.co/01-ai/Yi-34B-Chat-8bits
-#  # https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ#prompt-template-mistral
-# anno_temperature: 0  # temperature for this model. We expect the judge model output deterministic results, so we set temperature to 0.1.
-# anno_top_p: 0.6  # top_p for this model. The smaller the value, the more deterministic the model output is.
-# anno_max_tokens: 150  # maximum number of tokens to generate per output sequence.
-# repetition_penalty: 1  # set to 1 to avoid repetition penalty
-# anno_bs: 50  # batch size for this model
-# dtype: float16  # https://docs.vllm.ai/en/latest/models/engine_args.html#cmdoption-dtype
-# gpu_memory_utilization: 0.9
 
 Mistral:
  name: Mistral

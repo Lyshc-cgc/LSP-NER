@@ -7,7 +7,7 @@ logger = fu.get_logger('test_scipt')
 def main():
     config = fu.get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'conll2003'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
+    dataset_name = 'mit_restaurant'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
     assert dataset_name in config['data_cfgs'].keys()
 
     # label form
