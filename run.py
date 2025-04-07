@@ -58,7 +58,9 @@ def main():
         assert dialogue_style in {'multi_qa', 'batch_qa'}
         if prompt_type == 'sc_fs':
             assert dialogue_style == 'batch_qa'
-
+        if dialogue_style == 'multi_qa':
+            logger.error('multi_qa style cannot support batch inference')
+            annotator.batch_infer = False  # set batch_infer to False for multi_qa
         # 2.5 other testing settings
         if prompt_type == 'sc_fs':
             subset_sizes = [0.1, 0.2, 0.3, 0.4, 0.5] # label subset sizes for sc_fs
@@ -68,6 +70,8 @@ def main():
         ignore_sent_set = [False] # [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
         label_mention_map_portions_set = [[1]]# [1, 0.75, 0.5, 0.25, 0], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
         repeat_num = 2
+        demo_times = 1
+        demo_times_exp = False  # whether to carry out experiments on demo times
         seeds = [22, 32, 42]
         start_row = -1  # we set -1, because we don't want to write metrics to excel files when annotating
 
@@ -82,7 +86,10 @@ def main():
                             for seed in seeds:
 
                                 anno = Annotation(annotator, labels_cfg)
-                                anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
+                                if demo_times_exp:
+                                    anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
+                                else:
+                                    anno_cfg['demo_times'] = demo_times  # for sc_fs
                                 anno_cfg['repeat_num'] = rep_num + 1  # for sc_fs
                                 anno_cfg['subset_size'] = subset_size  # for sc_fs
                                 anno_cfg['prompt_template'] = fu.get_config(anno_cfg['prompt_template_dir'])

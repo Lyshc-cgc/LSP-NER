@@ -7,9 +7,10 @@ import os
 import xlsxwriter
 import jsonlines
 import time
+import openai
 
-from vllm import LLM, SamplingParams
 from tenacity import retry, retry_if_exception_type, wait_random
+from pathlib import Path
 from openai import OpenAI
 from datasets import load_from_disk, Dataset
 from tqdm import tqdm
@@ -29,6 +30,7 @@ class Annotator:
         :param just_test: If True, we just want to test something in the Annotation, so that we don't need to load the model.
         """
         self.use_api = True if api_cfg else False
+        self.batch_infer = api_cfg['batch_infer']
         self.annotator_cfg = annotator_cfg
         self.api_cfg = api_cfg if api_cfg else None
 
@@ -47,6 +49,7 @@ class Annotator:
                     max_retries=3,
                 )
             else:
+                from vllm import LLM, SamplingParams
                 # if not use api, we employ local annotator using vllm
                 # https://docs.vllm.ai/en/latest/getting_started/quickstart.html
                 self.anno_model = LLM(model=annotator_cfg['checkpoint'],
@@ -477,7 +480,7 @@ class Annotation(Label):
         :param annotator_cfg: The parameters of the annotation model.
         :param anno_cfg: the configuration of the annotation settings
         :param chat_msg_template: The chat message template for the annotating model.
-        :param anno_style: The annotation style including 'single_type', 'multi_type', 'cand_mention_type', 'subset_type' or 'raw'
+        :param anno_style: The annotation style including 'single_type', 'multi_type', 'cand_mention_type', 'subset_type'
         :param dialogue_style, the style of the dialogue 'batch_qa' or 'multi_qa'
         :return:
         """
@@ -560,14 +563,14 @@ class Annotation(Label):
         :param output_text: the text output by the annotator model
         :param sentence: the query sentence
         :param kwargs: other parameters including,
-            1) anno_style, indicate the annotation style including 'single_type', 'multi_type', 'cand_mention_type', 'subset_type' or 'raw'
+            1) anno_style, indicate the annotation style including 'single_type', 'multi_type', 'cand_mention_type', 'subset_type'
             2) analysis, whether to extract the analysis process in the output text
         :return: if the single_type_prompt is True, return the predicted spans and their labels.
         """
         import ast
         if not output_text:
             output_text = ''
-        output_text = output_text.strip().replace('\_', '_')
+        # output_text = output_text.strip().replace('\_', '_')
 
         # if kwargs['anno_style'] == 'single_type, we recognize all entity mention in the output_text given the type
         if kwargs['anno_style'] == 'single_type':
@@ -638,7 +641,6 @@ class Annotation(Label):
                 founded_spans = fu.find_span(sentence, str(mention))
                 out_spans += [(str(start), str(end), span, label) for start, end, span in set(founded_spans)]
             return out_spans
-        # kwargs['anno_style'] == 'raw', we extract the label of the entity mention
         else:
             json_pattern = [r'\{(.*?)\}', r'\{\{(.*?)\}\}']  # the pattern to extract JSON string
             # kwargs['single_type_prompt'] is False, we classify the given entity mention in the output_text
@@ -657,8 +659,6 @@ class Annotation(Label):
                         continue
             return out_label
 
-
-    @retry(wait=wait_random(1,3), retry=retry_if_exception_type(Exception))
     def get_response(self, client, chat_message, api_cfg, **kwargs):
         """
         Get the response of the annotator using api.
@@ -667,9 +667,9 @@ class Annotation(Label):
         :param api_cfg: the configuration of the api settings
         :return:
         """
-        # https://help.aliyun.com/zh/dashscope/developer-reference/compatibility-of-openai-with-dashscope/?spm=a2c4g.11186623.0.0.5fef6e432o2fr6
-        import openai
+        # https://help.aliyun.com/zh/dashscope/developer-reference/compatibility-of-openai-with-dashscope
 
+        output = '[]'
         try:
             logger.info('--------------- get response ---------------')
             completion = client.chat.completions.create(
@@ -692,6 +692,152 @@ class Annotation(Label):
             logger.error(f"other exception: {e}")
         return output
 
+    def get_batch_response(self, client, all_chat_messages, api_cfg, anno_cfg, **kwargs):
+        """
+        Get the response of the annotator using batch inference.
+        reffer to https://help.aliyun.com/zh/model-studio/batch-interfaces-compatible-with-openai
+        :param client: the client of the LLM API
+        :param all_chat_messages: all the chat messages to be sent to the api.
+        :param api_cfg: the configuration of the api settings
+        :param anno_cfg: the configuration of the annotation settings
+        :param kwargs: other parameters, including,
+            1) task_dir, the directory of this annotation task
+            2) annotator_name: the name of the annotator
+        :return:
+        """
+        def upload_file(file_path):
+            logger.info(f"Uploading JSONL file containing requests...")
+            file_object = client.files.create(file=Path(file_path), purpose="batch")
+            logger.info(f"Uploading success! Got file ID: {file_object.id}\n")
+            return file_object.id
+
+        def create_batch_job(input_file_id):
+            logger.info(f"Creating Batch Task based on file ID...")
+            # if using Embedding model, set 'endpoint' with '/v1/embeddings'
+            batch = client.batches.create(input_file_id=input_file_id, endpoint="/v1/chat/completions",
+                                          completion_window="24h")
+            logger.info(f"Creating a Batch Task success! Got Batch Task ID: {batch.id}\n")
+            return batch.id
+
+        def check_job_status(batch_id):
+            logger.info(f"Checking the job status of the Batch Task (id {batch_id})...")
+            batch = client.batches.retrieve(batch_id=batch_id)
+            logger.info(f"Batch Task status: {batch.status}\n")
+            return batch.status
+
+        def get_output_id(batch_id):
+            logger.info(f"Getting output file ID of the successful execution request in the Batch Task (id {batch_id})...")
+            batch = client.batches.retrieve(batch_id=batch_id)
+            logger.info(f"Output file ID: {batch.output_file_id}\n")
+            return batch.output_file_id
+
+        def get_error_id(batch_id):
+            logger.info(f"Getting output file ID for executing error requests in the Batch task (id {batch_id})...")
+            batch = client.batches.retrieve(batch_id=batch_id)
+            logger.info(f"Errot file ID: {batch.error_file_id}\n")
+            return batch.error_file_id
+
+        def download_results(output_file_id, output_file_path):
+            logger.info(f"downloading successful results of the batch task...")
+            content = client.files.content(output_file_id)
+            # print part of the content for testing
+            logger.info(f"Print the first 1000 characters of the successful request result: {content.text[:1000]}...\n")
+            # save results to local
+            content.write_to_file(output_file_path)
+            logger.info(f"save successful results to {output_file_path}\n")
+
+        def download_errors(error_file_id, error_file_path):
+            logger.info(f"downloading unsuccessful results of the batch task...")
+            content = client.files.content(error_file_id)
+            # print part of the content for testing
+            logger.info(f"Print the first 1000 characters of the unsuccessful request result: {content.text[:1000]}...\n")
+            # save error content  to local
+            content.write_to_file(error_file_path)
+            logger.info(f"save error results to {error_file_path}\n")
+
+        def init_input_file(input_file, all_chat_messages):
+            """
+            init input file, a jsonline file
+            # multi-line like
+
+            # {"custom_id":"1","method":"POST","url":"/v1/chat/completions","body":{"model":"qwen-max","messages":[{"role":"system","content":"You are a helpful assistant."},{"role":"user","content":"你好！有什么可以帮助你的吗？"}]}}
+
+            # {"custom_id":"2","method":"POST","url":"/v1/chat/completions","body":{"model":"qwen-max","messages":[{"role":"system","content":"You are a helpful assistant."},{"role":"user","content":"What is 2+2?"}]}}
+
+            :param input_file: the path of the input file
+            :param all_chat_messages: all the chat messages to be sent to the api.
+            :return:
+            """
+            # todo
+            with jsonlines.open(input_file, 'w') as writer:
+                for instance_id, chat, sent, query in all_chat_messages:
+                    line = {
+                        "custom_id": instance_id,
+                        "method": "POST",
+                        "url": "/v1/chat/completions",
+                        "body": {
+                            "model": api_cfg['model'],
+                            "messages": chat,
+                            "stream": kwargs['stream'],
+                            "top_p": kwargs['top_p'],
+                            "temperature": kwargs['temperature'],
+                            "max_tokens": kwargs['max_tokens'],
+                        }
+                    }
+                writer.write(line)
+            logger.info(f"Init input file {input_file} success!\n")
+
+
+        # 1. init file path
+        batch_infer_dir = anno_cfg['setting_parent_dir'].format(dataset_name=kwargs['dataset_name'])
+        batch_infer_dir = os.path.join(batch_infer_dir, 'batch_infer', kwargs['task_dir'])
+        if not os.path.exists(batch_infer_dir):
+            os.makedirs(batch_infer_dir)
+        annotator_name = kwargs['annotator_name']
+        input_file = os.path.join(batch_infer_dir, f"{annotator_name}_input.jsonl")  # file input
+        output_file = os.path.join(batch_infer_dir, f"{annotator_name}_output.jsonl")  # file output
+        error_file = os.path.join(batch_infer_dir, f"{annotator_name}_error.jsonl")  # error file
+
+        # 2. init input file, a jsonline file
+        init_input_file(input_file, all_chat_messages)
+
+        # stream = self.annotator.annotator_cfg['stream'],
+        # temperature = self.annotator.annotator_cfg['anno_temperature'],
+        # top_p = self.annotator.annotator_cfg['anno_top_p'],
+        # max_tokens = self.annotator.annotator_cfg['anno_max_tokens'])
+
+
+        try:
+            # Step 1: 上传包含请求信息的JSONL文件,得到输入文件ID,如果您需要输入OSS文件,可将下行替换为：input_file_id = "实际的OSS文件URL或资源标识符"
+            input_file_id = upload_file(input_file)
+            # Step 2: 基于输入文件ID,创建Batch任务
+            batch_id = create_batch_job(input_file_id)
+            # Step 3: 检查Batch任务状态直到结束
+            status = ""
+            while status not in ["completed", "failed", "expired", "cancelled"]:
+                status = check_job_status(batch_id)
+                print(f"等待任务完成...")
+                time.sleep(10)  # 等待10秒后再次查询状态
+            # 如果任务失败,则打印错误信息并退出
+            if status == "failed":
+                batch = client.batches.retrieve(batch_id)
+                print(f"Batch任务失败。错误信息为:{batch.errors}\n")
+                print(f"参见错误码文档: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+                return
+            # Step 4: 下载结果：如果输出文件ID不为空,则打印请求成功结果的前1000个字符内容，并下载完整的请求成功结果到本地输出文件;
+            # 如果错误文件ID不为空,则打印请求失败信息的前1000个字符内容,并下载完整的请求失败信息到本地错误文件.
+            output_file_id = get_output_id(batch_id)
+            if output_file_id:
+                download_results(output_file_id, output_file)
+            error_file_id = get_error_id(batch_id)
+            if error_file_id:
+                download_errors(error_file_id, error_file)
+                print(f"参见错误码文档: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            print(f"参见错误码文档: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+
+
     def annotate_by_one(self,dataset, anno_cfg, **kwargs):
         """
         Annotate the dataset by one specific annotator.
@@ -701,7 +847,7 @@ class Annotation(Label):
             2) dataset_name, the name of the dataset
             3) eval, whether to evaluate the annotation quality for each annotator
             4) cache, whether to cache the annotation results
-            5) prompt_type, the type of the prompt, including single_type, mt_fs, raw, and so on
+            5) prompt_type, the type of the prompt, including single_type, mt_fs, and so on
             6) sampling_strategy, the strategy to sample the test subset
             7) dialogue_style, the style of the dialogue 'batch_qa' or 'multi_qa'
             8) ignore_sent, whether to ignore the sentence in the chat message. If True, the sentence will be shown as '***'.
@@ -753,6 +899,8 @@ class Annotation(Label):
                 annotator_name += '-lmp_{}'.format(kwargs['label_mention_map_portion'])
         if kwargs['seed']:
             annotator_name += '-{}'.format(kwargs['seed'])
+
+        # task dir for this annotation
         task_dir = os.path.join(label_format_dir, prompt_type_dir, label_des_dir, sub_samp_dir, dialogue_style_dir, model_name)
         res_cache_dir = os.path.join(cache_dir, task_dir, annotator_name)
         logger.info(f'result cache dir: {res_cache_dir}')
@@ -779,7 +927,7 @@ class Annotation(Label):
 
         # 0.3 other parameters
         prompt_lens_all = []
-        excecution_time_all = []
+        execution_time_all = []
         query_count = 0
         efficiency_paras = None
 
@@ -828,21 +976,34 @@ class Annotation(Label):
                 batch_size = len(chat_msg_template)
             else:
                 batch_size = self.annotator.annotator_cfg['anno_bs']
-            pbar = tqdm(fu.batched(self._generate_chat_msg(instances=dataset,
-                                                           annotator_cfg=self.annotator.annotator_cfg,
-                                                           anno_cfg=anno_cfg,
-                                                           chat_msg_template=chat_msg_template,
-                                                           anno_style=anno_style,
-                                                           dialogue_style=kwargs['dialogue_style']),
-                                   batch_size),
-                        desc=f'annotating by {annotator_name}, dataset {dataset_name}')
 
+            all_chat_messages = self._generate_chat_msg(
+                instances=dataset,
+                annotator_cfg=self.annotator.annotator_cfg,
+                anno_cfg=anno_cfg,
+                chat_msg_template=chat_msg_template,
+                anno_style=anno_style,
+                dialogue_style=kwargs['dialogue_style']
+            )
+            pbar = tqdm(
+                fu.batched(all_chat_messages, batch_size),
+                desc=f'annotating by {annotator_name}, dataset {dataset_name}'
+            )
             res_labels, res_label_ids = [], []  # store the output labels and label ids
 
-            y_true = []
             pred_spans = [] # store the predicted spans and its label
             output_texts = []  # store the output text for each instance
             instance_results = []  # store the sentence, pred spans, gold results for each instance. Only used for multi/sigle type prompt
+            if self.annotator.use_api and self.annotator.batch_infer:
+                # use batch inference
+                outputs, instance_results, pred_spans, output_texts = self.get_batch_response(
+                    client=self.annotator.client,
+                    all_chat_messages=all_chat_messages,
+                    anno_cfg=anno_cfg,
+                    task_dir=task_dir,
+                    annotator_name=annotator_name
+                    **kwargs
+                )
             for batch_id, batch in enumerate(pbar):
                 batch_spans = []  # store the span for each batch
                 batch_instance_ids = []  # store the instance ids for each batch
@@ -851,21 +1012,13 @@ class Annotation(Label):
                 batch_quries = []  # store the queries for each batch
                 batch_res_label_ids = []  # store the output label ids for each batch to evaluate
 
-                if anno_style == 'raw':
-                    # batch is a tuple like ((instance_id_0, span_0, chat_0),(instance_id_1,span_1, chat_1)...)
-                    # we  get all gold span labels after annotation
-                    for instance_id, span, chat, sent in batch:
-                        batch_instance_ids.append(instance_id)
-                        batch_spans.append(span)
-                        batch_chats.append(chat)
-                        batch_sents.append(sent)
-                else:  # single_type, multi_type, cand_mention_type, subset_type, subset_cand
-                    # batch is a tuple like ((instance_id_0, chat_0, sent_0), (instance_id_1, chat_1, sent_1),...)
-                    for instance_id, chat, sent, query in batch:
-                        batch_instance_ids.append(instance_id)
-                        batch_chats.append(chat)
-                        batch_sents.append(sent)
-                        batch_quries.append(query)
+                # for single_type, multi_type, cand_mention_type, subset_type, subset_cand
+                # batch is a tuple like ((instance_id_0, chat_0, sent_0, query_0), (instance_id_1, chat_1, sent_1, query_1),...)
+                for instance_id, chat, sent, query in batch:
+                    batch_instance_ids.append(instance_id)
+                    batch_chats.append(chat)
+                    batch_sents.append(sent)
+                    batch_quries.append(query)
 
                 # 2.2 get the response of the annotator
                 if kwargs['dialogue_style'] == 'batch_qa':
@@ -874,6 +1027,7 @@ class Annotation(Label):
                         for chat in batch_chats:
                             output = self.get_response(client=self.annotator.client,
                                                        chat_message=chat,
+                                                       api_cfg=self.annotator.api_cfg,
                                                        stream=self.annotator.annotator_cfg['stream'],
                                                        temperature=self.annotator.annotator_cfg['anno_temperature'],
                                                        top_p=self.annotator.annotator_cfg['anno_top_p'],
@@ -887,7 +1041,7 @@ class Annotation(Label):
                         outputs = self.annotator.anno_model.generate(templated_batch_chats, self.annotator.sampling_params)  # annotate
                         end_time = time.time()
                         exce_time = end_time - start_time
-                        excecution_time_all.append(exce_time)
+                        execution_time_all.append(exce_time)
                         logger.info(f'execution time for a batch: {exce_time} s')
                         logger.info(f'execution time for a instance: {exce_time / len(outputs)} s')
 
@@ -918,11 +1072,12 @@ class Annotation(Label):
                             multi_qa_chat.append({"role": "user", "content": query})
                         if self.annotator.use_api:  # use LLM API and multi_qa
                             output_text = self.get_response(client=self.annotator.client,
-                                                       chat_message=multi_qa_chat,
-                                                       stream=self.annotator.annotator_cfg['stream'],
-                                                       temperature=self.annotator.annotator_cfg['anno_temperature'],
-                                                       top_p=self.annotator.annotator_cfg['anno_top_p'],
-                                                       max_tokens=self.annotator.annotator_cfg['anno_max_tokens'])
+                                                            chat_message=multi_qa_chat,
+                                                            api_cfg=self.annotator.api_cfg,
+                                                            stream=self.annotator.annotator_cfg['stream'],
+                                                            temperature=self.annotator.annotator_cfg['anno_temperature'],
+                                                            top_p=self.annotator.annotator_cfg['anno_top_p'],
+                                                            max_tokens=self.annotator.annotator_cfg['anno_max_tokens'])
                         else:  # use local annotator and multi_qa
                             templated_multi_qa_chat = self.annotator.anno_tokenizer.apply_chat_template(multi_qa_chat, add_generation_prompt=True,tokenize=False)
                             tmp_outputs = self.annotator.anno_model.generate(templated_multi_qa_chat, self.annotator.sampling_params)  # len(tmp_outputs) == 1
@@ -1041,16 +1196,18 @@ class Annotation(Label):
             cache_result = Dataset.from_dict(cache_result)
             logger.info(f'Save cache result to {res_cache_dir}')
 
-            prompt_avg_len = sum(prompt_lens_all) // query_count
-            avg_time_per_batch = sum(excecution_time_all) / len(excecution_time_all)
-            avg_time_per_ins = sum(excecution_time_all) / query_count
-            efficiency_paras = {'prompt_avg_len': prompt_avg_len,
-                                'avg_time_per_batch': avg_time_per_batch,
-                                'avg_time_per_ins': avg_time_per_ins
-                                }
-            logger.info(f'prompt average length: {prompt_avg_len} tokens')
-            logger.info(f'average execution time for a batch: {avg_time_per_batch} s')
-            logger.info(f'average execution time for a instance: {avg_time_per_ins} s')
+            efficiency_paras = None
+            if kwargs['dialogue_style'] == 'batch_qa' and not self.annotator.use_api:
+                prompt_avg_len = sum(prompt_lens_all) // query_count
+                avg_time_per_batch = sum(execution_time_all) / len(execution_time_all)
+                avg_time_per_ins = sum(execution_time_all) / query_count
+                efficiency_paras = {'prompt_avg_len': prompt_avg_len,
+                                    'avg_time_per_batch': avg_time_per_batch,
+                                    'avg_time_per_ins': avg_time_per_ins
+                                    }
+                logger.info(f'prompt average length: {prompt_avg_len} tokens')
+                logger.info(f'average execution time for a batch: {avg_time_per_batch} s')
+                logger.info(f'average execution time for a instance: {avg_time_per_ins} s')
 
             if kwargs['cache']:
                 cache_result.save_to_disk(res_cache_dir)

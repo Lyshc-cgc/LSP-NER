@@ -56,25 +56,26 @@ def create_multi_bars(ax,
 
     error_params = dict(elinewidth=1, capsize=3)  # 设置误差标记参数
     # 绘制柱子
-    for i, (y, portion, std, color) in enumerate(zip(datas, groups, errors, colors)):
+    for i, (y, proportion, std, color) in enumerate(zip(datas, groups, errors, colors)):
         ax.bar(x + i * bar_span, y, bar_width, color=color,
-               yerr=std, label=f'{portion}', error_kw=error_params)
+               yerr=std, label=f'{proportion}', error_kw=error_params)
     ax.set_ylabel('micro-f1 (%)')
     ax.set_title(title)
     # ticks为新x轴刻度标签位置，即每组柱子x轴上的中心位置
     ticks = x + (group_width - bar_span) / 2
     ax.set_xticks(ticks)
     ax.set_xticklabels(xlabels)
-    ax.legend(title='portion', loc='upper right',
+    ax.legend(title='accuracy', loc='upper right',
               frameon=True, fancybox=True, framealpha=0.7)
     ax.grid(True, linestyle=':', alpha=0.6)
 
 
 class vis_theis:
-    def __init__(self):
+    def __init__(self, file_type):
         self.base_path = '../data/vis/theis'
         if not os.path.exists(self.base_path):
             os.makedirs(self.base_path)
+        self.file_type = file_type
 
     def vis_demo_num_part1(self):
         """
@@ -92,7 +93,7 @@ class vis_theis:
             groups = ['Qwen', 'Mixtral']
             for i in range(len(axs)):
                 axs[i].set_ylabel('micro-f1 (%)')
-                axs[i].set_xlabel('repeat nums')
+                axs[i].set_xlabel('duplicating nums')
             axs[0].set_title('1-shot')
             axs[1].set_title('5-shot')
             x = np.arange(len(data[0]))
@@ -140,7 +141,7 @@ class vis_theis:
             [3.59, 1.87, 2.58, 1.86, 2.56, 1.31],  # qwen
             [2.26, 2.27, 2.49, 3.19, 2.58, 1.67],  # mixtral
         ]
-        plot_errorbar(conll03_datas, conll03_errors, 'conll03_num')
+        plot_errorbar(conll03_datas, conll03_errors, 'conll03_num', self.file_type)
 
         # 2. onto5
         onto5_datas = [
@@ -160,7 +161,7 @@ class vis_theis:
             [2.45, 1.33, 1.50, 1.78, 1.64, 2.18],  # qwen
             [1.30, 1.15, 1.29, 0.82, 1.34, 0.35],  # mixtral
         ]
-        plot_errorbar(onto5_datas, onto5_errors, 'onto5_num')
+        plot_errorbar(onto5_datas, onto5_errors, 'onto5_num', self.file_type)
 
         # 3. movies
         movies_datas = [
@@ -180,7 +181,7 @@ class vis_theis:
             [2.54, 1.83, 1.50, 1.22, 1.40, 0.89],  # qwen
             [0.70, 2.69, 0.56, 0.27, 8.30, 0.00],  # mixtral
         ]
-        plot_errorbar(movies_datas, movies_errors, 'movies_num')
+        plot_errorbar(movies_datas, movies_errors, 'movies_num', self.file_type)
 
         # 4. restaurant
         restaurant_datas = [
@@ -200,11 +201,11 @@ class vis_theis:
             [2.52, 2.72, 3.44, 3.31, 3.41, 2.70],  # qwen
             [1.29, 1.47, 1.20, 1.29, 2.05, 2.10],  # mixtral
         ]
-        plot_errorbar(restaurant_datas, restaurant_errors, 'restaurant_num')
+        plot_errorbar(restaurant_datas, restaurant_errors, 'restaurant_num', self.file_type)
 
-    def vis_label_portion_part1(self,):
+    def vis_label_proportion_part1(self,):
         """
-        In part 1, visualize the portion of corrected labeled data
+        In part 1, visualize the proportion of corrected labeled data
 
         :param data:
         :param error:
@@ -221,7 +222,7 @@ class vis_theis:
             create_multi_bars(axs[0],
                               models,
                               '1-shot',
-                              # (2, 5) -> (5, 2), 5个portion，2个模型
+                              # (2, 5) -> (5, 2), 5个proportion，2个模型
                               np.array(data[:2]).T,
                               np.array(error[:2]).T,
                               colors=colors,
@@ -235,7 +236,7 @@ class vis_theis:
                               colors=colors,
                               groups=groups,
                               )
-            vis_path = os.path.join(self.base_path, 'part1/label_portion')
+            vis_path = os.path.join(self.base_path, 'part1/label_proportion')
             if not os.path.exists(vis_path):
                 os.makedirs(vis_path)
             file = os.path.join(vis_path, f'{file_name}.{file_type}')
@@ -245,7 +246,7 @@ class vis_theis:
         # 1. conll03
         conll03_datas = [
             # 1-shot
-            # qwen, 对应5个portion, 1, 0.75, 0.5, 0.25, 0
+            # qwen, 对应5个proportion, 1, 0.75, 0.5, 0.25, 0
             [44.79, 44.55, 45.39, 43.32, 42.23],
             [26.22, 27.32, 27.73, 26.43, 32.26],  # mixtral
             # 5-shot
@@ -254,19 +255,19 @@ class vis_theis:
         ]
         conll03_errors = [
             # 1-shot
-            # qwen, 对应5个portion, 1, 0.75, 0.5, 0.25, 0
+            # qwen, 对应5个proportion, 1, 0.75, 0.5, 0.25, 0
             [1.85, 1.47, 2.05, 3.52, 3.41],
             [1.91, 2.10, 3.54, 3.23, 3.58],  # mixtral
             # 5-shot
             [1.40, 2.85, 1.83, 1.37, 3.79],  # qwen
             [3.41, 4.01, 5.36, 1.37, 1.69],  # mixtral
         ]
-        plot_bars(conll03_datas, conll03_errors, 'conll03')
+        plot_bars(conll03_datas, conll03_errors, 'conll03',self.file_type)
 
         # 2. ontonotes5
         onto5_datas = [
             # 1-shot
-            # qwen, 对应5个portion, 1, 0.75, 0.5, 0.25, 0
+            # qwen, 对应5个proportion, 1, 0.75, 0.5, 0.25, 0
             [34.74, 32.50, 28.67, 26.40, 24.13],
             [26.39, 27.57, 25.32, 23.10, 19.59],  # mixtral
             # 5-shot
@@ -275,7 +276,7 @@ class vis_theis:
         ]
         onto5_errors = [
             # 1-shot
-            # qwen, 对应5个portion, 1, 0.75, 0.5, 0.25, 0
+            # qwen, 对应5个proportion, 1, 0.75, 0.5, 0.25, 0
             [1.34, 2.45, 1.65, 1.70, 1.93],
             [2.95, 3.91, 2.30, 2.05, 1.58],  # mixtral
             # 5-shot
@@ -283,12 +284,12 @@ class vis_theis:
             [1.87, 1.30, 4.61, 1.50, 2.70],  # mixtral
         ]
 
-        plot_bars(onto5_datas, onto5_errors, 'ontonotes5')
+        plot_bars(onto5_datas, onto5_errors, 'ontonotes5',self.file_type)
 
         # 3. movies
         movies_datas = [
             # 1-shot
-            # qwen, 对应5个portion, 1, 0.75, 0.5, 0.25, 0
+            # qwen, 对应5个proportion, 1, 0.75, 0.5, 0.25, 0
             [67.24, 66.57, 63.81, 59.88, 56.94],
             [68.25, 67.99, 64.75, 60.75, 58.47],  # mixtral
             # 5-shot
@@ -297,7 +298,7 @@ class vis_theis:
         ]
         movies_errors = [
             # 1-shot
-            # qwen, 对应5个portion, 1, 0.75, 0.5, 0.25, 0
+            # qwen, 对应5个proportion, 1, 0.75, 0.5, 0.25, 0
             [0.92, 0.88, 2.80, 1.23, 2.22],
             [1.47, 2.49, 0.95, 2.57, 1.54],  # mixtral
             # 5-shot
@@ -305,12 +306,12 @@ class vis_theis:
             [1.04, 2.04, 0.95, 1.78, 4.40],  # mixtral
         ]
 
-        plot_bars(movies_datas, movies_errors, 'movies')
+        plot_bars(movies_datas, movies_errors, 'movies',self.file_type)
 
         # 4. restaurant
         restaurant_datas = [
             # 1-shot
-            # qwen, 对应5个portion, 1, 0.75, 0.5, 0.25, 0
+            # qwen, 对应5个proportion, 1, 0.75, 0.5, 0.25, 0
             [50.27, 50.15, 49.24, 47.18, 43.36],
             [48.71, 49.29, 46.74, 46.81, 43.59],  # mixtral
             # 5-shot
@@ -319,7 +320,7 @@ class vis_theis:
         ]
         restaurant_errors = [
             # 1-shot
-            # qwen, 对应5个portion, 1, 0.75, 0.5, 0.25, 0
+            # qwen, 对应5个proportion, 1, 0.75, 0.5, 0.25, 0
             [2.70, 1.73, 1.49, 0.53, 0.59],
             [1.42, 0.92, 1.84, 1.37, 2.08],  # mixtral
             # 5-shot
@@ -327,7 +328,7 @@ class vis_theis:
             [1.17, 2.28, 2.04, 2.60, 2.87],  # mixtral
         ]
 
-        plot_bars(restaurant_datas, restaurant_errors, 'restaurant')
+        plot_bars(restaurant_datas, restaurant_errors, 'restaurant',self.file_type)
 
     def vis_partition_times(self):
         """
@@ -391,7 +392,7 @@ class vis_theis:
             [1.34, 3.13, 2.76, 1.51, 2.66, 2.38],  # qwen
             [2.92, 1.33, 4.27, 2.51, 3.27, 3.52],  # mixtral
         ]
-        plot_errorbar(conll03_datas, conll03_errors, 'conll03_part_times')
+        plot_errorbar(conll03_datas, conll03_errors, 'conll03_part_times',self.file_type)
 
         # 2. onto5
         onto5_datas = [
@@ -411,7 +412,7 @@ class vis_theis:
             [2.06, 3.14, 2.23, 1.07, 1.87, 1.37],  # qwen
             [0.21, 4.74, 1.26, 0.60, 0, 0],  # mixtral
         ]
-        plot_errorbar(onto5_datas, onto5_errors, 'onto5_part_times')
+        plot_errorbar(onto5_datas, onto5_errors, 'onto5_part_times',self.file_type)
 
         # 3. movies
         movies_datas = [
@@ -431,7 +432,7 @@ class vis_theis:
             [0.62, 1.93, 2.12, 1.66, 2.10, 1.15],  # qwen
             [2.43, 1.97, 3.63, 4.28, 0.65, 0.00],  # mixtral
         ]
-        plot_errorbar(movies_datas, movies_errors, 'movies_part_times')
+        plot_errorbar(movies_datas, movies_errors, 'movies_part_times',self.file_type)
 
         # 4. restaurant
         restaurant_datas = [
@@ -451,7 +452,7 @@ class vis_theis:
             [3.27, 2.13, 2.69, 2.51, 2.90, 2.69],  # qwen
             [1.10, 2.25, 1.77, 3.61, 2.09, 7.97],  # mixtral
         ]
-        plot_errorbar(restaurant_datas, restaurant_errors, 'restaurant_part_times')
+        plot_errorbar(restaurant_datas, restaurant_errors, 'restaurant_part_times',self.file_type)
 
     def vis_subset_size_part2(self):
         """
@@ -467,7 +468,7 @@ class vis_theis:
             groups = ['Qwen', 'Mixtral']
             for i in range(len(axs)):
                 axs[i].set_ylabel('micro-f1 (%)')
-                axs[i].set_xlabel('subset portion')
+                axs[i].set_xlabel('subset proportion')
             axs[0].set_title('1-shot')
             axs[1].set_title('5-shot')
             x = np.arange(len(data[0])) * 0.1 + 0.1
@@ -489,7 +490,7 @@ class vis_theis:
             # grid
             axs[0].grid(True, linestyle=':', alpha=0.6)
             axs[1].grid(True, linestyle=':', alpha=0.6)
-            rep_num_path = os.path.join(self.base_path, 'part2/subset_portion')
+            rep_num_path = os.path.join(self.base_path, 'part2/subset_proportion')
             if not os.path.exists(rep_num_path):
                 os.makedirs(rep_num_path)
 
@@ -500,7 +501,7 @@ class vis_theis:
         # 1. conll03
         conll03_datas = [
             # 1-shot
-            # qwen, portion 0.1, 0.2, 0.3, 0.4, 0.5
+            # qwen, proportion 0.1, 0.2, 0.3, 0.4, 0.5
             [47.47, 48.92, 47.38, 47.55, 47.40],
             [31.55, 30.91, 31.27, 32.00, 30.03],  # mixtral
             # 5-shot
@@ -509,19 +510,19 @@ class vis_theis:
         ]
         conll03_errors = [
             # 1-shot
-            # qwen, portion 0.1, 0.2, 0.3, 0.4, 0.5
+            # qwen, proportion 0.1, 0.2, 0.3, 0.4, 0.5
             [1.84, 2.52, 1.73, 3.12, 2.48],
             [0.89, 1.80, 2.96, 0.58, 2.80],  # mixtral
             # 5-shot
             [3.60, 2.06, 3.61, 1.15, 1.34],  # qwen
             [1.52, 3.94, 4.12, 3.17, 2.92],  # mixtral
         ]
-        plot_errorbar(conll03_datas, conll03_errors, 'conll03_subset_portion')
+        plot_errorbar(conll03_datas, conll03_errors, 'conll03_subset_proportion',self.file_type)
 
         # 2. onto5
         onto5_datas = [
             # 1-shot
-            # qwen, portion 0.1, 0.2, 0.3, 0.4, 0.5
+            # qwen, proportion 0.1, 0.2, 0.3, 0.4, 0.5
             [40.36, 40.95, 40.31, 40.51, 39.37],
             [3.68, 23.07, 29.77, 29.00, 29.96],  # mixtral
             # 5-shot
@@ -530,19 +531,19 @@ class vis_theis:
         ]
         onto5_errors = [
             # 1-shot
-            # qwen, portion 0.1, 0.2, 0.3, 0.4, 0.5
+            # qwen, proportion 0.1, 0.2, 0.3, 0.4, 0.5
             [1.05, 1.42, 1.42, 3.37, 2.01],
             [2.77, 3.95, 2.55, 3.38, 2.68],  # mixtral
             # 5-shot
             [0.89, 2.19, 0.88, 0.40, 2.06],  # qwen
             [0.96, 3.66, 1.25, 3.01, 0.21],  # mixtral
         ]
-        plot_errorbar(onto5_datas, onto5_errors, 'onto5_subset_portion')
+        plot_errorbar(onto5_datas, onto5_errors, 'onto5_subset_proportion',self.file_type)
 
         # 3. movies
         movies_datas = [
             # 1-shot
-            # qwen, portion 0.1, 0.2, 0.3, 0.4, 0.5
+            # qwen, proportion 0.1, 0.2, 0.3, 0.4, 0.5
             [64.23, 66.90, 66.21, 65.77, 65.58],
             [65.79, 66.91, 67.57, 68.94, 69.09],  # mixtral
             # 5-shot
@@ -551,19 +552,19 @@ class vis_theis:
         ]
         movies_errors = [
             # 1-shot
-            # qwen, portion 0.1, 0.2, 0.3, 0.4, 0.5
+            # qwen, proportion 0.1, 0.2, 0.3, 0.4, 0.5
             [0.12, 1.30, 0.38, 0.30, 1.09],
             [1.57, 1.55, 1.68, 0.94, 1.31],  # mixtral
             # 5-shot
             [1.53, 1.06, 2.42, 3.10, 0.62],  # qwen
             [10.89, 1.01, 1.69, 0.39, 2.43],  # mixtral
         ]
-        plot_errorbar(movies_datas, movies_errors, 'movies_subset_portion')
+        plot_errorbar(movies_datas, movies_errors, 'movies_subset_proportion',self.file_type)
 
         # 4. restaurant
         restaurant_datas = [
             # 1-shot
-            # qwen, portion 0.1, 0.2, 0.3, 0.4, 0.5
+            # qwen, proportion 0.1, 0.2, 0.3, 0.4, 0.5
             [45.89, 47.17, 46.79, 49.14, 48.23],
             [47.55, 47.61, 47.71, 50.59, 49.20],  # mixtral
             # 5-shot
@@ -572,7 +573,7 @@ class vis_theis:
         ]
         restaurant_errors = [
             # 1-shot
-            # qwen, portion 0.1, 0.2, 0.3, 0.4, 0.5
+            # qwen, proportion 0.1, 0.2, 0.3, 0.4, 0.5
             [2.68, 3.43, 3.17, 1.11, 1.34],
             [0.93, 2.19, 1.43, 1.49, 2.47],  # mixtral
             # 5-shot
@@ -580,7 +581,7 @@ class vis_theis:
             [2.12, 3.07, 3.37, 2.02, 1.10],  # mixtral
         ]
         plot_errorbar(restaurant_datas, restaurant_errors,
-                      'restaurant_subset_portion')
+                      'restaurant_subset_proportion',self.file_type)
 
     def main_thesis(self):
         """
@@ -592,8 +593,8 @@ class vis_theis:
         # 1.1 the number of demonstrations
         self.vis_demo_num_part1()
 
-        # 1.2. the portion of corrected labeled data
-        self.vis_label_portion_part1()
+        # 1.2. the proportion of corrected labeled data
+        self.vis_label_proportion_part1()
 
         # 2. part 2
         # 2.1 the repeat number for demonstrations, subset candidate
@@ -613,7 +614,7 @@ def main_paper():
     # 1.1 conll03
     conll03_datas = [
         # 1-shot
-        [44.79, 44.55, 45.39, 43.32],  # mt,对应四个portion
+        [44.79, 44.55, 45.39, 43.32],  # mt,对应四个proportion
         [52.21, 52.46, 49.78, 50.70],  # ours, sc-0.5-r1
         # 5-shot
         [48.67, 47.89, 46.84, 44.16],  # mt
@@ -627,7 +628,7 @@ def main_paper():
         [1.40, 2.85, 1.83, 1.37],  # mt
         [0.93, 1.04, 0.90, 0.78],  # ours, sc-0.5-r1
     ]
-    # vis_label_portion(conll03_datas, conll03_errors, model_name, 'conll03')
+    # vis_label_proportion(conll03_datas, conll03_errors, model_name, 'conll03')
 
     # 1.2 ontonotes5
     onto5_datas = [
@@ -646,7 +647,7 @@ def main_paper():
         [2.56, 2.77, 3.61, 3.74],  # mt
         [2.17, 2.09, 1.34, 2.65],  # ours, sc-0.5-r1
     ]
-    # vis_label_portion(onto5_datas, onto5_errors, model_name, 'ontonotes5')
+    # vis_label_proportion(onto5_datas, onto5_errors, model_name, 'ontonotes5')
 
     # 1.3 movies
     movies_datas = [
@@ -665,7 +666,7 @@ def main_paper():
         [2.61, 1.58, 2.39, 0.77],  # mt
         [0.39, 1.95, 2.77, 0.86],  # ours, sc-0.5-r1
     ]
-    # vis_label_portion(movies_datas, movies_errors, model_name, 'movies')
+    # vis_label_proportion(movies_datas, movies_errors, model_name, 'movies')
 
     # 1.3 restaurant
     restaurant_datas = [
@@ -684,7 +685,7 @@ def main_paper():
         [2.35, 1.15, 1.02, 2.76],  # mt
         [1.79, 1.28, 2.70, 2.19],  # ours, sc-0.5-r1
     ]
-    # vis_label_portion(restaurant_datas, restaurant_errors, model_name, 'restaurant')
+    # vis_label_proportion(restaurant_datas, restaurant_errors, model_name, 'restaurant')
 
     # 2. Mixtral
     model_name = 'Mixtral'
@@ -705,7 +706,7 @@ def main_paper():
         [3.41, 4.01, 5.36, 1.37],  # mt
         [2.37, 0.39, 1.57, 0.48],  # ours, sc-0.5-r1
     ]
-    # vis_label_portion(conll03_datas, conll03_errors, model_name, 'conll03')
+    # vis_label_proportion(conll03_datas, conll03_errors, model_name, 'conll03')
 
     # 2.2 ontonotes5
     onto5_datas = [
@@ -724,7 +725,7 @@ def main_paper():
         [1.87, 1.30, 4.61, 1.50],  # mt
         [0.35, 0.54, 1.84, 1.38],  # ours, sc-0.5-r1
     ]
-    # vis_label_portion(onto5_datas, onto5_errors, model_name, 'ontonotes5')
+    # vis_label_proportion(onto5_datas, onto5_errors, model_name, 'ontonotes5')
 
     # 2.3 movies
     movies_datas = [
@@ -743,7 +744,7 @@ def main_paper():
         [1.04, 2.04, 0.95, 1.78],  # mt
         [2.58, 1.64, 0.55, 1.79],  # ours, sc-0.5-r1
     ]
-    # vis_label_portion(movies_datas, movies_errors, model_name, 'movies')
+    # vis_label_proportion(movies_datas, movies_errors, model_name, 'movies')
 
     # 2.3 restaurant
     restaurant_datas = [
@@ -762,9 +763,10 @@ def main_paper():
         [1.17, 2.28, 2.04, 2.60],  # mt
         [2.87, 2.81, 2.91, 3.46],  # ours, sc-0.5-r1
     ]
-    # vis_label_portion(restaurant_datas, restaurant_errors, model_name, 'restaurant')
+    # vis_label_proportion(restaurant_datas, restaurant_errors, model_name, 'restaurant')
 
 
 if __name__ == '__main__':
-    vt = vis_theis()
+    file_type = 'pdf'  # 'pdf', 'png'
+    vt = vis_theis(file_type)
     vt.main_thesis()

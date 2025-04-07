@@ -1,5 +1,5 @@
 
-from module import Annotation, Processor
+from module import Annotation, Processor, Annotator
 from module import func_util as fu
 
 logger = fu.get_logger('test_scipt')
@@ -7,7 +7,7 @@ logger = fu.get_logger('test_scipt')
 def main():
     config = fu.get_config('config.yml')
     # 1. pre-process the data
-    dataset_name = 'mit_restaurant'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
+    dataset_name = 'mit_movies'  # 'conll2003', 'ontonotes5', 'mit_movies', 'mit_restaurant',
     assert dataset_name in config['data_cfgs'].keys()
 
     # label form
@@ -21,8 +21,8 @@ def main():
     # 2. annotate the data by LLMs
     # 2.1 api annotator config (optional) and local annotator config
     # api annotator
-    use_api = False
-    api_model = 'gpt'
+    use_api = True
+    api_model = 'deepseek'
     assert api_model in {'qwen', 'deepseek', 'glm', 'gpt'}
     api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
 
@@ -33,32 +33,35 @@ def main():
 
     # 2.2 annotation prompt settings
     prompt_type = 'mt_fs'
-    assert prompt_type in {'mt_fs', 'sc_fs', 'st_fs'}
+    assert prompt_type in {'mt_fs', 'lsp', 'st_fs'}
 
     # 2.3 test subset sampling settings
     # 'random' for random sampling. Each instance has the same probability of being selected.
     # 'lab_uniform' for uniform sampling at label-level. Choice probability is uniform for each label.
     # 'proportion' for proportion sampling. Choice probability is proportional to the number of entities for each label.
     # 'shot_sample' for sampling test set like k-shot sampling. Each label has at least k instances.
-    test_subset_size = 200
+    test_subset_size = 100
     sampling_strategy = 'random'
     assert sampling_strategy in {'random', 'lab_uniform', 'proportion', 'shot_sample'}
 
     # 2.4 dialogue style settings
     # 'multi-qa' for multi-turn QA, we concatenate the output of the previous turn with the input of the current turn.
     # 'batch-qa' for batch QA, we use new context for each query.
-    dialogue_style = 'batch_qa'
+    dialogue_style = 'multi_qa'
     assert dialogue_style in {'multi_qa', 'batch_qa'}
 
     # 2.5 other testing settings
-    if prompt_type == 'sc_fs':
-        subset_sizes = [0.1, 0.2, 0.3, 0.4, 0.5] # label subset sizes for sc_fs
-    else:
-        subset_sizes = [0.5]
+    # if prompt_type == 'lsp':
+    #     subset_sizes = [0.1, 0.2, 0.3, 0.4, 0.5] # label subset sizes for lsp
+    # else:
+    #     subset_sizes = [0.5]
+    subset_sizes = [0.5]
     ignore_sent = False  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
     label_mention_map_portions = [1]  # [1, 0.75, 0.5, 0.25] the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
     just_test=True  # for test, so skip to load the LLMs
-    repeat_num = 1
+    repeat_num = 2
+    demo_times = 1
+    demo_times_exp = False  # whether to carry out experiments on demo times
     seeds = [22, 32, 42]  # [22, 32, 42], ['00', '01', '02']
     start_row = 2
 
@@ -75,18 +78,20 @@ def main():
     anno_cfgs = [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
     # anno_cfgs =  [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths if '1' in anno_cfg_path or '5' in anno_cfg_path ]
 
-    anno = Annotation(annotator_cfg,
-                      api_cfg,
-                      labels_cfg,
-                      just_test=just_test)
+    annotator = Annotator(annotator_cfg, api_cfg, just_test=just_test)
+    anno = Annotation(annotator,
+                      labels_cfg,)
     for lmm_portion in label_mention_map_portions:
         for rep_num in range(repeat_num):
             for anno_cfg in anno_cfgs:
                 for subset_size in subset_sizes:
                     for seed in seeds:
-                        anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
-                        anno_cfg['repeat_num'] = rep_num + 1  # for sc_fs
-                        anno_cfg['subset_size'] = subset_size  # for sc_fs
+                        if demo_times_exp:
+                            anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
+                        else:
+                            anno_cfg['demo_times'] = demo_times
+                        anno_cfg['repeat_num'] = rep_num + 1  # for lsp
+                        anno_cfg['subset_size'] = subset_size  # for lsp
                         if test_subset_size > 0:
                             dataset_subset = proc.subset_sampling(dataset, test_subset_size, sampling_strategy, seed)
                         logger.info(f"anno cfg: {anno_cfg['name']}")

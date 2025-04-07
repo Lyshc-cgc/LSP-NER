@@ -15,11 +15,11 @@ anno_cfgs:
     - cfgs/single_type/anno_cfg_st_fs_5.yml
     - cfgs/single_type/anno_cfg_st_fs_1.yml
   mt_fs:  # multi-type prompt, few-shot setting
-    - cfgs/multi_type/anno_cfg_mt_fs_7.yml
+#    - cfgs/multi_type/anno_cfg_mt_fs_7.yml
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_3.yml
+#    - cfgs/multi_type/anno_cfg_mt_fs_3.yml
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
-#    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
+    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
   sb_fs:  # subset type prompt, few-shot setting
     - cfgs/subset_type/anno_cfg_sb_fs_0.yml
     - cfgs/subset_type/anno_cfg_sb_fs_1.yml
