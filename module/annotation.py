@@ -8,6 +8,7 @@ import xlsxwriter
 import jsonlines
 import time
 import openai
+import uuid
 
 from pathlib import Path
 from openai import OpenAI
@@ -662,70 +663,27 @@ class Annotation(Label):
             logger.error(f"other exception: {e}")
         return output
 
-    def get_batch_response(self, client, all_chat_messages, api_cfg, anno_cfg, **kwargs):
+    def get_batch_response(self, client, all_chat_message_info, api_cfg, anno_cfg, **kwargs):
         """
         Get the response of the annotator using batch inference.
         reffer to https://help.aliyun.com/zh/model-studio/batch-interfaces-compatible-with-openai
         :param client: the client of the LLM API
-        :param all_chat_messages: all the chat messages to be sent to the api.
+        :param all_chat_message_info: all the chat messages info to be sent to the api.
+            an element of all_chat_message_info is a tuple like (instance_id, chat_message, sentence, query)
         :param api_cfg: the configuration of the api settings
         :param anno_cfg: the configuration of the annotation settings
         :param kwargs: other parameters, including,
-            1) task_dir, the directory of this annotation task
-            2) annotator_name: the name of the annotator
+            1) anno_style, the annotation style including 'single_type', 'multi_type', 'subset_type', 'subset_cand'
+            2) dataset_name, the dataset name used in this annotation
+            3) task_dir, the directory of this annotation task
+            4) annotator_name: the name of the annotator
+            5) stream, whether to use stream mode in batch inference api
+            6) temperature, the temperature of the api model
+            7) top_p, the top_p of the api model
+            8) max_tokens, the max tokens of the api model
         :return:
         """
-        def upload_file(file_path):
-            logger.info(f"Uploading JSONL file containing requests...")
-            file_object = client.files.create(file=Path(file_path), purpose="batch")
-            logger.info(f"Uploading success! Got file ID: {file_object.id}\n")
-            return file_object.id
-
-        def create_batch_job(input_file_id):
-            logger.info(f"Creating Batch Task based on file ID...")
-            # if using Embedding model, set 'endpoint' with '/v1/embeddings'
-            batch = client.batches.create(input_file_id=input_file_id, endpoint="/v1/chat/completions",
-                                          completion_window="24h")
-            logger.info(f"Creating a Batch Task success! Got Batch Task ID: {batch.id}\n")
-            return batch.id
-
-        def check_job_status(batch_id):
-            logger.info(f"Checking the job status of the Batch Task (id {batch_id})...")
-            batch = client.batches.retrieve(batch_id=batch_id)
-            logger.info(f"Batch Task status: {batch.status}\n")
-            return batch.status
-
-        def get_output_id(batch_id):
-            logger.info(f"Getting output file ID of the successful execution request in the Batch Task (id {batch_id})...")
-            batch = client.batches.retrieve(batch_id=batch_id)
-            logger.info(f"Output file ID: {batch.output_file_id}\n")
-            return batch.output_file_id
-
-        def get_error_id(batch_id):
-            logger.info(f"Getting output file ID for executing error requests in the Batch task (id {batch_id})...")
-            batch = client.batches.retrieve(batch_id=batch_id)
-            logger.info(f"Errot file ID: {batch.error_file_id}\n")
-            return batch.error_file_id
-
-        def download_results(output_file_id, output_file_path):
-            logger.info(f"downloading successful results of the batch task...")
-            content = client.files.content(output_file_id)
-            # print part of the content for testing
-            logger.info(f"Print the first 1000 characters of the successful request result: {content.text[:1000]}...\n")
-            # save results to local
-            content.write_to_file(output_file_path)
-            logger.info(f"save successful results to {output_file_path}\n")
-
-        def download_errors(error_file_id, error_file_path):
-            logger.info(f"downloading unsuccessful results of the batch task...")
-            content = client.files.content(error_file_id)
-            # print part of the content for testing
-            logger.info(f"Print the first 1000 characters of the unsuccessful request result: {content.text[:1000]}...\n")
-            # save error content  to local
-            content.write_to_file(error_file_path)
-            logger.info(f"save error results to {error_file_path}\n")
-
-        def init_input_file(input_file, all_chat_messages):
+        def init_input_file(input_file, all_chat_message_info, anno_style):
             """
             init input file, a jsonline file
             # multi-line like
@@ -735,18 +693,20 @@ class Annotation(Label):
             # {"custom_id":"2","method":"POST","url":"/v1/chat/completions","body":{"model":"qwen-max","messages":[{"role":"system","content":"You are a helpful assistant."},{"role":"user","content":"What is 2+2?"}]}}
 
             :param input_file: the path of the input file
-            :param all_chat_messages: all the chat messages to be sent to the api.
+            :param all_chat_message_info: all the chat messages info to be sent to the api.
+                an element of all_chat_message_info is a tuple like (instance_id, chat_message, sentence, query)
+            :param anno_style: the annotation style including 'single_type', 'multi_type', 'subset_type', 'subset_cand'
             :return:
             """
-            # todo 继续完成
             with jsonlines.open(input_file, 'w') as writer:
-                for instance_id, chat, sent, query in all_chat_messages:
+                for instance_id, chat, sent, query in all_chat_message_info:
+                    instance_id = str(instance_id) + '-' + uuid.uuid4().hex
                     line = {
                         "custom_id": instance_id,
                         "method": "POST",
-                        "url": "/v1/chat/completions",
+                        "url": "/v1/chat/ds-test",  # /v1/chat/completions
                         "body": {
-                            "model": api_cfg['model'],
+                            "model": 'batch-test-model',  # api_cfg['model']
                             "messages": chat,
                             "stream": kwargs.get('stream', False),
                             "top_p": kwargs.get('top_p', 0.5),
@@ -754,9 +714,109 @@ class Annotation(Label):
                             "max_tokens": kwargs.get('max_tokens', 100),
                         }
                     }
-                writer.write(line)
+                    writer.write(line)
             logger.info(f"Init input file {input_file} success!\n")
 
+        def upload_file(file_path):
+            """
+            upload the input file to the server
+            :param file_path: the path of the input file
+            :return:
+            """
+            logger.info(f"Uploading JSONL file containing requests...")
+            file_object = client.files.create(file=Path(file_path), purpose="batch")
+            logger.info(f"Uploading success! Got file ID: {file_object.id}\n")
+            return file_object.id
+
+        def create_batch_job(input_file_id):
+            """
+            create a batch job based on the input file ID
+            :param input_file_id: the ID of the input file
+            :return:
+            """
+            logger.info(f"Creating Batch Task based on file ID...")
+            # if using Embedding model, set 'endpoint' with '/v1/embeddings'
+            batch = client.batches.create(
+                input_file_id=input_file_id,
+                endpoint="/v1/chat/completions",
+                completion_window="24h")
+            logger.info(f"Creating a Batch Task success! Got Batch Task ID: {batch.id}\n")
+            return batch.id
+
+        def check_job_status(batch_id):
+            """
+            check the job status of the batch task
+            :param batch_id: the ID of the batch task
+            :return:
+            """
+            logger.info(f"Checking the job status of the Batch Task (id {batch_id})...")
+            batch = client.batches.retrieve(batch_id=batch_id)
+            logger.info(f"Batch Task status: {batch.status}\n")
+            return batch.status
+
+        def get_output_id(batch_id):
+            """
+            get the output file ID of the successful execution request in the Batch Task
+            :param batch_id: the ID of the batch task
+            :return:
+            """
+            logger.info(f"Getting output file ID of the successful execution request in the Batch Task (id {batch_id})...")
+            batch = client.batches.retrieve(batch_id=batch_id)
+            logger.info(f"Output file ID: {batch.output_file_id}\n")
+            return batch.output_file_id
+
+        def get_error_id(batch_id):
+            """
+            get the output file ID of the unsuccessful executing requests in the Batch Task
+            :param batch_id: the ID of the batch task
+            :return:
+            """
+            logger.info(f"Getting output file ID for executing error requests in the Batch task (id {batch_id})...")
+            batch = client.batches.retrieve(batch_id=batch_id)
+            logger.info(f"Errot file ID: {batch.error_file_id}\n")
+            return batch.error_file_id
+
+        def download_results(output_file_id, output_file_path):
+            """
+            download the successful results of the batch task
+            :param output_file_id: the ID of the output file
+            :param output_file_path: the local path of the output file to save output
+            :return:
+            """
+            logger.info(f"downloading successful results of the batch task...")
+            content = client.files.content(output_file_id)
+            # print part of the content for testing
+            logger.info(f"Print the first 1000 characters of the successful request result: {content.text[:1000]}...\n")
+            # save results to local
+            content.write_to_file(output_file_path)
+            logger.info(f"save successful results to {output_file_path}\n")
+
+        def download_errors(error_file_id, error_file_path):
+            """
+            download the unsuccessful results of the batch task
+            :param error_file_id: the ID of the error file
+            :param error_file_path: the local path of the error file to save error
+            :return:
+            """
+            logger.info(f"downloading unsuccessful results of the batch task...")
+            content = client.files.content(error_file_id)
+            # print part of the content for testing
+            logger.info(f"Print the first 1000 characters of the unsuccessful request result: {content.text[:1000]}...\n")
+            # save error content  to local
+            content.write_to_file(error_file_path)
+            logger.info(f"save error results to {error_file_path}\n")
+
+        def extract_outputs(output_file):
+            """
+            extract the outputs from the output file
+            :param output_file: the local path of the output file
+            :return:
+            """
+            outputs = []
+            with jsonlines.open(output_file) as reader:
+                for line in reader:
+                    outputs.append(line['response']['body']['choices'][0]['message']['content'])
+            return outputs
 
         # 1. init file path
         batch_infer_dir = anno_cfg['setting_parent_dir'].format(dataset_name=kwargs['dataset_name'])
@@ -769,14 +829,13 @@ class Annotation(Label):
         error_file = os.path.join(batch_infer_dir, f"{annotator_name}_error.jsonl")  # error file
 
         # 2. init input file, a jsonline file
-        init_input_file(input_file, all_chat_messages)
-
-        # stream = self.annotator.annotator_cfg['stream'],
-        # temperature = self.annotator.annotator_cfg['anno_temperature'],
-        # top_p = self.annotator.annotator_cfg['anno_top_p'],
-        # max_tokens = self.annotator.annotator_cfg['anno_max_tokens'])
-
-
+        if not os.path.exists(input_file):
+            logger.info(f"Input file doesn't exist. Init input file {input_file}...")
+            init_input_file(input_file, all_chat_message_info, anno_style=kwargs['anno_style'])
+        if os.path.exists(output_file):  # if the output file exists, read it and return
+            logger.info(f"Output file exist! Read cache from: {output_file}...")
+            outputs = extract_outputs(output_file)
+            return outputs
         try:
             # Step 1: 上传包含请求信息的JSONL文件,得到输入文件ID,如果您需要输入OSS文件,可将下行替换为：input_file_id = "实际的OSS文件URL或资源标识符"
             input_file_id = upload_file(input_file)
@@ -807,6 +866,8 @@ class Annotation(Label):
             logger.error(f"An error occurred: {e}")
             logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
 
+        outputs = extract_outputs(output_file)
+        return outputs
 
     def annotate_by_one(self,dataset, anno_cfg, **kwargs):
         """
@@ -947,17 +1008,26 @@ class Annotation(Label):
             all_sententes = []  # store the sentences for each instance.
             all_queries = []  # store the queries for each instance.
 
+            # unpack the all_chat_message_info
+            for instance_id, chat_message, sentence, query in all_chat_message_info:
+                all_instance_ids.append(instance_id)
+                all_chat_messagges.append(chat_message)
+                all_sententes.append(sentence)
+                all_queries.append(query)
+
             # 2.3 use batch inference with api.
             # Prioritize judging and executing this code segment
             if self.annotator.use_api and self.annotator.batch_infer:
                 logger.info('using batch inference with api to annotate...')
                 # use batch inference
                 # 2.3.1 get the response of the annotator
-                outputs, instance_results, pred_spans = self.get_batch_response(
+                outputs = self.get_batch_response(
                     client=self.annotator.client,
-                    all_chat_message_info=all_chat_message_info,
+                    all_chat_message_info=zip(all_instance_ids, all_chat_messagges, all_sententes, all_queries),
                     api_cfg=self.annotator.api_cfg,
                     anno_cfg=anno_cfg,
+                    anno_style=anno_style,
+                    dataset_name=dataset_name,
                     task_dir=task_dir,
                     annotator_name=annotator_name,
                     stream=self.annotator.annotator_cfg['stream'],
@@ -965,13 +1035,6 @@ class Annotation(Label):
                     top_p=self.annotator.annotator_cfg['anno_top_p'],
                     max_tokens=self.annotator.annotator_cfg['anno_max_tokens']
                 )
-            else:
-                # unpack the all_chat_message_info
-                for instance_id, chat_message, sentence, query in all_chat_message_info:
-                    all_instance_ids.append(instance_id)
-                    all_chat_messagges.append(chat_message)
-                    all_sententes.append(sentence)
-                    all_queries.append(query)
 
             # 2.4 when not using batch inference, get the response of the annotator
             if not self.annotator.batch_infer and kwargs.get('dialogue_style') == 'batch_qa':

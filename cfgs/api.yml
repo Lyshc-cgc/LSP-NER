@@ -16,7 +16,7 @@ deepseek:
   base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
   model: deepseek-v3
   api_key: DASHSCOPE_API_KEY  # the os environment variable name, DEEPSEEK_API_KEY for official key from DeepSeek
-  batch_infer: False  # whether to use the bacth api
+  batch_infer: True  # whether to use the bacth api
 
 gpt:
   base_url: https://fastapi.top/v1
