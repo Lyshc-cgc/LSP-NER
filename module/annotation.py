@@ -9,7 +9,6 @@ import jsonlines
 import time
 import openai
 
-from tenacity import retry, retry_if_exception_type, wait_random
 from pathlib import Path
 from openai import OpenAI
 from datasets import load_from_disk, Dataset
@@ -169,12 +168,10 @@ class Annotation(Label):
 
         sys_prompt = prompt_template['prompt_template'].format(**prompt_kwargs)
 
-        if annotator_cfg['chat']:  # for chat model like qwen, it has 'system' role message
+        if kwargs['use_api']:  # when use api, almost all models are chat models
             chat_message = [{"role": "system", "content": sys_prompt}]
-            if kwargs['use_api'] and self.annotator.api_cfg['model'] == 'qwen-long':
-                # see https://help.aliyun.com/document_detail/2788814.html?spm=a2c4g.2788811.0.0.1440240aUbuyYI#b7f81199e2laz
-                # when use qwen-long, we should add an extra system message for role-play to the chat_message
-                chat_message = [{'role': 'system', 'content': prompt_template['system_role']}] + chat_message
+        elif annotator_cfg['chat']:  # for local chat model like qwen, it has 'system' role message
+            chat_message = [{"role": "system", "content": sys_prompt}]
         else:  # for non-chat models like mistral, it doesn't have 'system' role message
             chat_message = [{"role": "user", "content": sys_prompt}]
         return chat_message
@@ -331,7 +328,6 @@ class Annotation(Label):
             2) dialogue_style: the style of the dialogue. 'batch_qa' or 'multi_qa'
         :return: a list of chat message template for each label subset
         """
-        # todo,为每个示例qurey添加一个Instruction
         if annotator_cfg['chat']:
             pass
         else:
@@ -480,81 +476,56 @@ class Annotation(Label):
         :param annotator_cfg: The parameters of the annotation model.
         :param anno_cfg: the configuration of the annotation settings
         :param chat_msg_template: The chat message template for the annotating model.
-        :param anno_style: The annotation style including 'single_type', 'multi_type', 'cand_mention_type', 'subset_type'
+        :param anno_style: The annotation style including 'single_type', 'multi_type', 'subset_type'
         :param dialogue_style, the style of the dialogue 'batch_qa' or 'multi_qa'
         :return:
         """
+        def _generate_chat_info(query_template, chat_msg_template, tokens):
+            sentence = ' '.join(tokens)
+            chat_message = copy.deepcopy(chat_msg_template)
+            query = query_template.format(sentence=sentence, output='')
+            if dialogue_style == 'batch_qa':
+                user_prompt = '\n### Query\n' + query
+            else:
+                user_prompt = query
+            if self.annotator.use_api or annotator_cfg['chat']:
+                chat_message.append({"role": "user", "content": user_prompt})
+            else:
+                user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
+                chat_message[-1]["content"] = user_prompt  # replace the original user prompt
+            return instance_id, chat_message, sentence, query
+
         prompt_template = anno_cfg['prompt_template']
         for instance_id, tokens, spans_labels in zip(instances['id'], instances['tokens'], instances['spans_labels']):
             if anno_style == 'single_type':
                 # generate chat message using the single_type_prompt to extract entity directly by annotators
                 # for single_type, chat_msg_template is a list of chat message template for each label
                 # chat_msg_template[0] is for the first label, chat_msg_template[1] is for the second label, and so on.
+                query_template = prompt_template['instance_template']
                 for chat_msg_temp in chat_msg_template:
-                    sentence = ' '.join(tokens)
                     chat_message = copy.deepcopy(chat_msg_temp)
-                    query = prompt_template['instance_template'].format(sentence=sentence, output='')
-                    if dialogue_style == 'batch_qa':
-                        user_prompt = '\n### Query\n' + query
-                    else:
-                        user_prompt = query
-
-                    if annotator_cfg['chat']:
-                        chat_message.append({"role": "user", "content": user_prompt})
-                    else:
-                        user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
-                        chat_message[-1]["content"] = user_prompt  # replace the original user prompt
-                    yield instance_id, chat_message, sentence, query
+                    # yield instance_id, chat_message, sentence, query
+                    yield _generate_chat_info(query_template, chat_message, tokens)
             elif anno_style == 'multi_type':
                 # generate chat message using the multi_type_prompt to extract entity directly by annotators
-                sentence = ' '.join(tokens)
                 chat_message = copy.deepcopy(chat_msg_template)
-                query = prompt_template['instance_template'].format(sentence=sentence, output='')
-                if dialogue_style == 'batch_qa':
-                    user_prompt = '\n### Query\n' + query
-                else:
-                    user_prompt = query
-
-                if annotator_cfg['chat']:
-                    chat_message.append({"role": "user", "content": user_prompt})
-                else:
-                    user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
-                    chat_message[-1]["content"] = user_prompt  # replace the original user prompt
-                yield instance_id, chat_message, sentence, query
+                query_template = prompt_template['instance_template']
+                # yield instance_id, chat_message, sentence, query
+                yield _generate_chat_info(query_template, chat_message, tokens)
             elif anno_style == 'subset_type':
                 # generate chat message using the subset types
                 # In this case, the chat msg template is a list of chat message template for each label subset
-                instance_template = prompt_template['instance_template'][dialogue_style]
+                query_template = prompt_template['instance_template'][dialogue_style]
                 for chat_msg_temp in chat_msg_template:
                     chat_message = copy.deepcopy(chat_msg_temp)
-                    sentence = ' '.join(tokens)
-                    query = instance_template.format(sentence=sentence, output='')
-                    if dialogue_style == 'batch_qa':
-                        user_prompt = '\n### Query\n' + query
-                    else:
-                        user_prompt = query
-                    if annotator_cfg['chat']:
-                        chat_message.append({"role": "user", "content": user_prompt})
-                    else:
-                        user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
-                        chat_message[-1]["content"] = user_prompt  # replace the original user prompt
-                    yield instance_id, chat_message, sentence, query
+                    # yield instance_id, chat_message, sentence, query
+                    yield _generate_chat_info(query_template, chat_message, tokens)
             elif anno_style == 'subset_cand':
                 # generate chat message using the subset candidate prompt
-                instance_template = prompt_template['instance_template'][dialogue_style]
+                query_template = prompt_template['instance_template'][dialogue_style]
                 chat_message = copy.deepcopy(chat_msg_template)
-                sentence = ' '.join(tokens)
-                query = instance_template.format(sentence=sentence, output='')
-                if dialogue_style == 'batch_qa':
-                    user_prompt = '\n### Query\n' + query
-                else:
-                    user_prompt = query
-                if annotator_cfg['chat']:
-                    chat_message.append({"role": "user", "content": user_prompt})
-                else:
-                    user_prompt = chat_message[-1]["content"] + user_prompt  # concat the query to the system prompt
-                    chat_message[-1]["content"] = user_prompt  # replace the original user prompt
-                yield instance_id, chat_message, sentence, query
+                # yield instance_id, chat_message, sentence, query
+                yield _generate_chat_info(query_template, chat_message, tokens)
 
     @staticmethod
     def _process_output(output_text, sentence, **kwargs):
@@ -563,7 +534,7 @@ class Annotation(Label):
         :param output_text: the text output by the annotator model
         :param sentence: the query sentence
         :param kwargs: other parameters including,
-            1) anno_style, indicate the annotation style including 'single_type', 'multi_type', 'cand_mention_type', 'subset_type'
+            1) anno_style, indicate the annotation style including 'single_type', 'multi_type', 'subset_type'
             2) analysis, whether to extract the analysis process in the output text
         :return: if the single_type_prompt is True, return the predicted spans and their labels.
         """
@@ -612,8 +583,7 @@ class Annotation(Label):
 
         # kwargs['multi_type_prompt'] is True, we recognize all entity mention in the output_text given multiple types
         # we extract a list of tuples
-        elif (kwargs['anno_style'] == 'multi_type' or kwargs['anno_style'] == 'cand_mention_type'
-              or kwargs['anno_style'] == 'subset_type' or kwargs['anno_style'] == 'subset_cand'):
+        elif (kwargs['anno_style'] == 'multi_type' or kwargs['anno_style'] == 'subset_type' or kwargs['anno_style'] == 'subset_cand'):
             out_spans = []
             pattern = r'\[(.*?)\]'  # the pattern to extract a list string
             result = re.search(pattern, output_text, re.DOTALL)  # only find the first list string
@@ -768,7 +738,7 @@ class Annotation(Label):
             :param all_chat_messages: all the chat messages to be sent to the api.
             :return:
             """
-            # todo
+            # todo 继续完成
             with jsonlines.open(input_file, 'w') as writer:
                 for instance_id, chat, sent, query in all_chat_messages:
                     line = {
@@ -778,10 +748,10 @@ class Annotation(Label):
                         "body": {
                             "model": api_cfg['model'],
                             "messages": chat,
-                            "stream": kwargs['stream'],
-                            "top_p": kwargs['top_p'],
-                            "temperature": kwargs['temperature'],
-                            "max_tokens": kwargs['max_tokens'],
+                            "stream": kwargs.get('stream', False),
+                            "top_p": kwargs.get('top_p', 0.5),
+                            "temperature": kwargs.get('temperature', 0.1),
+                            "max_tokens": kwargs.get('max_tokens', 100),
                         }
                     }
                 writer.write(line)
@@ -816,13 +786,13 @@ class Annotation(Label):
             status = ""
             while status not in ["completed", "failed", "expired", "cancelled"]:
                 status = check_job_status(batch_id)
-                print(f"等待任务完成...")
+                logger.info(f"waiting fot the batch task (id {batch_id}) complete...")
                 time.sleep(10)  # 等待10秒后再次查询状态
             # 如果任务失败,则打印错误信息并退出
             if status == "failed":
                 batch = client.batches.retrieve(batch_id)
-                print(f"Batch任务失败。错误信息为:{batch.errors}\n")
-                print(f"参见错误码文档: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+                logger.error(f"Batch task fail. Error message:{batch.errors}\n")
+                logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
                 return
             # Step 4: 下载结果：如果输出文件ID不为空,则打印请求成功结果的前1000个字符内容，并下载完整的请求成功结果到本地输出文件;
             # 如果错误文件ID不为空,则打印请求失败信息的前1000个字符内容,并下载完整的请求失败信息到本地错误文件.
@@ -832,10 +802,10 @@ class Annotation(Label):
             error_file_id = get_error_id(batch_id)
             if error_file_id:
                 download_errors(error_file_id, error_file)
-                print(f"参见错误码文档: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+                logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
         except Exception as e:
-            print(f"An error occurred: {e}")
-            print(f"参见错误码文档: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+            logger.error(f"An error occurred: {e}")
+            logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
 
 
     def annotate_by_one(self,dataset, anno_cfg, **kwargs):
@@ -925,7 +895,7 @@ class Annotation(Label):
         elif anno_style == 'sc':
             anno_style = 'subset_cand'
 
-        # 0.3 other parameters
+        # 0.3 other parameters to evaluate effieciency (only work for batch_qa with local annotator)
         prompt_lens_all = []
         execution_time_all = []
         query_count = 0
@@ -934,38 +904,20 @@ class Annotation(Label):
         # annotation process
         if annotate_flag:
             # 1. Init the chat messages
-            if anno_style == 'single_type':
-                if 'k_shot' in anno_cfg.keys() and anno_cfg['k_shot'] >= 0:  # single_type_prompt with few-shot setting
-                    chat_msg_template = self._st_fs_msg(
-                        annotator_cfg=self.annotator.annotator_cfg,
-                        anno_cfg=anno_cfg,
-                        use_api=self.annotator.use_api,
-                        **kwargs
-                    )
-            elif anno_style == 'multi_type':
-                if 'k_shot' in anno_cfg.keys() and anno_cfg['k_shot'] >= 0:
-                    chat_msg_template = self._mt_fs_msg(
-                        annotator_cfg=self.annotator.annotator_cfg,
-                        anno_cfg=anno_cfg,
-                        use_api=self.annotator.use_api,
-                        **kwargs
-                    )
-            elif anno_style == 'subset_type':
-                if 'k_shot' in anno_cfg.keys() and anno_cfg['k_shot'] >= 0:
-                    chat_msg_template = self._subset_type_fs_msg(
-                        annotator_cfg=self.annotator.annotator_cfg,
-                        anno_cfg=anno_cfg,
-                        use_api=self.annotator.use_api,
-                        **kwargs
-                    )
-            elif anno_style == 'subset_cand':
-                if 'k_shot' in anno_cfg.keys() and anno_cfg['k_shot'] >= 0:
-                    chat_msg_template = self._subset_cand_fs_msg(
-                        annotator_cfg=self.annotator.annotator_cfg,
-                        anno_cfg=anno_cfg,
-                        use_api=self.annotator.use_api,
-                        **kwargs
-                    )
+            init_chat_template_methods = {
+                'single_type': self._st_fs_msg,
+                'multi_type': self._mt_fs_msg,
+                'subset_type': self._subset_type_fs_msg,
+                'subset_cand': self._subset_cand_fs_msg
+            }
+
+            if anno_cfg.get('k_shot', -1) >= 0:
+                chat_msg_template = init_chat_template_methods[anno_style](
+                    annotator_cfg=self.annotator.annotator_cfg,
+                    anno_cfg=anno_cfg,
+                    use_api=self.annotator.use_api,
+                    **kwargs
+                )
 
             # 2. batch process
             # 2.1 yield batch data
@@ -977,94 +929,105 @@ class Annotation(Label):
             else:
                 batch_size = self.annotator.annotator_cfg['anno_bs']
 
-            all_chat_messages = self._generate_chat_msg(
+            all_chat_message_info = self._generate_chat_msg(
                 instances=dataset,
                 annotator_cfg=self.annotator.annotator_cfg,
                 anno_cfg=anno_cfg,
                 chat_msg_template=chat_msg_template,
                 anno_style=anno_style,
                 dialogue_style=kwargs['dialogue_style']
-            )
-            pbar = tqdm(
-                fu.batched(all_chat_messages, batch_size),
-                desc=f'annotating by {annotator_name}, dataset {dataset_name}'
-            )
-            res_labels, res_label_ids = [], []  # store the output labels and label ids
+            )  # an element of all_chat_message_info is a tuple like (instance_id, chat_message, sentence, query)
 
+            # 2.2 init the result
             pred_spans = [] # store the predicted spans and its label
-            output_texts = []  # store the output text for each instance
             instance_results = []  # store the sentence, pred spans, gold results for each instance. Only used for multi/sigle type prompt
+            outputs = []  # outputs (they are string) for each instance using api|annotator
+            all_instance_ids = []  # store the instance ids for each instance.
+            all_chat_messagges = []  # store the chat messages for each instance.
+            all_sententes = []  # store the sentences for each instance.
+            all_queries = []  # store the queries for each instance.
+
+            # 2.3 use batch inference with api.
+            # Prioritize judging and executing this code segment
             if self.annotator.use_api and self.annotator.batch_infer:
+                logger.info('using batch inference with api to annotate...')
                 # use batch inference
-                outputs, instance_results, pred_spans, output_texts = self.get_batch_response(
+                # 2.3.1 get the response of the annotator
+                outputs, instance_results, pred_spans = self.get_batch_response(
                     client=self.annotator.client,
-                    all_chat_messages=all_chat_messages,
+                    all_chat_message_info=all_chat_message_info,
+                    api_cfg=self.annotator.api_cfg,
                     anno_cfg=anno_cfg,
                     task_dir=task_dir,
-                    annotator_name=annotator_name
-                    **kwargs
+                    annotator_name=annotator_name,
+                    stream=self.annotator.annotator_cfg['stream'],
+                    temperature=self.annotator.annotator_cfg['anno_temperature'],
+                    top_p=self.annotator.annotator_cfg['anno_top_p'],
+                    max_tokens=self.annotator.annotator_cfg['anno_max_tokens']
                 )
-            for batch_id, batch in enumerate(pbar):
-                batch_spans = []  # store the span for each batch
-                batch_instance_ids = []  # store the instance ids for each batch
-                batch_chats = []  # store the chats for each batch
-                batch_sents = []  # store the sentences for each batch
-                batch_quries = []  # store the queries for each batch
-                batch_res_label_ids = []  # store the output label ids for each batch to evaluate
+            else:
+                # unpack the all_chat_message_info
+                for instance_id, chat_message, sentence, query in all_chat_message_info:
+                    all_instance_ids.append(instance_id)
+                    all_chat_messagges.append(chat_message)
+                    all_sententes.append(sentence)
+                    all_queries.append(query)
 
-                # for single_type, multi_type, cand_mention_type, subset_type, subset_cand
-                # batch is a tuple like ((instance_id_0, chat_0, sent_0, query_0), (instance_id_1, chat_1, sent_1, query_1),...)
-                for instance_id, chat, sent, query in batch:
-                    batch_instance_ids.append(instance_id)
-                    batch_chats.append(chat)
-                    batch_sents.append(sent)
-                    batch_quries.append(query)
-
-                # 2.2 get the response of the annotator
-                if kwargs['dialogue_style'] == 'batch_qa':
-                    if self.annotator.use_api:  # use LLM API and batch_qa
-                        outputs = []
-                        for chat in batch_chats:
-                            output = self.get_response(client=self.annotator.client,
-                                                       chat_message=chat,
-                                                       api_cfg=self.annotator.api_cfg,
-                                                       stream=self.annotator.annotator_cfg['stream'],
-                                                       temperature=self.annotator.annotator_cfg['anno_temperature'],
-                                                       top_p=self.annotator.annotator_cfg['anno_top_p'],
-                                                       max_tokens=self.annotator.annotator_cfg['anno_max_tokens'])
-                            outputs.append(output)
-                    else:  # use local annotator and batch_qa
-                        # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
-                        templated_batch_chats = self.annotator.anno_tokenizer.apply_chat_template(batch_chats, add_generation_prompt=True,tokenize=False)
-
+            # 2.4 when not using batch inference, get the response of the annotator
+            if not self.annotator.batch_infer and kwargs.get('dialogue_style') == 'batch_qa':
+                if self.annotator.use_api:
+                    # use LLM API and batch_qa
+                    logger.info('using api with batch_qa to annotate...')
+                    for chat in tqdm(all_chat_messagges, desc=f'annotating by {annotator_name}, dataset {dataset_name}'):
+                        output = self.get_response(client=self.annotator.client,
+                                                   chat_message=chat,
+                                                   api_cfg=self.annotator.api_cfg,
+                                                   stream=self.annotator.annotator_cfg['stream'],
+                                                   temperature=self.annotator.annotator_cfg['anno_temperature'],
+                                                   top_p=self.annotator.annotator_cfg['anno_top_p'],
+                                                   max_tokens=self.annotator.annotator_cfg['anno_max_tokens'])
+                        outputs.append(output)
+                else:
+                    # use local annotator and batch_qa
+                    # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
+                    for batch_chats in tqdm(
+                            fu.batched(all_chat_messagges, batch_size),
+                            desc=f'annotating by {annotator_name}, dataset {dataset_name}'
+                    ):
+                        templated_batch_chats = self.annotator.anno_tokenizer.apply_chat_template(
+                            batch_chats, add_generation_prompt=True,tokenize=False
+                        )
                         start_time = time.time()
-                        outputs = self.annotator.anno_model.generate(templated_batch_chats, self.annotator.sampling_params)  # annotate
+                        batch_outputs = self.annotator.anno_model.generate(templated_batch_chats, self.annotator.sampling_params)  # annotate
                         end_time = time.time()
                         exce_time = end_time - start_time
                         execution_time_all.append(exce_time)
                         logger.info(f'execution time for a batch: {exce_time} s')
-                        logger.info(f'execution time for a instance: {exce_time / len(outputs)} s')
+                        logger.info(f'execution time for a instance: {exce_time / len(batch_outputs)} s')
 
                         # for test
                         # test_answer = []
-                        # for output in outputs:
+                        # for output in batch_outputs:
                         #     test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
-                        prompt_lens = [len(e.prompt_token_ids) for e in outputs]
+                        prompt_lens = [len(e.prompt_token_ids) for e in batch_outputs]
                         prompt_lens_all += prompt_lens
 
                         logger.info(f'prompt average length: {sum(prompt_lens) // len(prompt_lens)} tokens')
 
-                        output_lens = [len(e.outputs[0].token_ids) for e in outputs]
+                        output_lens = [len(e.outputs[0].token_ids) for e in batch_outputs]
                         logger.info(f'output average length: {sum(output_lens) // len(output_lens)} tokens')
 
-                        outputs = [e.outputs[0].text for e in outputs]
-                        query_count += len(outputs)
-                elif kwargs['dialogue_style'] == 'multi_qa':
-                    outputs = []
+                        batch_outputs = [e.outputs[0].text for e in batch_outputs]
+                        query_count += len(batch_outputs)
+                        outputs += batch_outputs
+            elif not self.annotator.batch_infer and kwargs['dialogue_style'] == 'multi_qa':
+                multi_qa_chat = []
 
-                    multi_qa_chat = []
-
-                    for idx, (chat, query) in enumerate(zip(batch_chats, batch_quries)):
+                for batch in tqdm(
+                    fu.batched(zip(all_instance_ids, all_chat_messagges, all_sententes, all_queries), batch_size),
+                    desc=f'annotating by {annotator_name}, dataset {dataset_name}'
+                ):
+                    for idx, (instance_id, chat, sent, query) in enumerate(batch):
                         # chat[0] is the user role message
                         if idx == 0:
                             multi_qa_chat.append(chat[0])
@@ -1093,7 +1056,7 @@ class Annotation(Label):
                         outputs.append(output_text)
 
                         # process the output for each turn in the multi_qa
-                        out_spans = self._process_output(output_text, batch_sents[0], anno_style=anno_style)
+                        out_spans = self._process_output(output_text, sent, anno_style=anno_style)
                         context_output = '['  # process output and append to chat message as context
                         tmp_pred_spans = []  # store prediction spans for each instance
                         for start, end, entity_mention, label in set(out_spans):
@@ -1110,11 +1073,15 @@ class Annotation(Label):
                         # append processed output to chat message as context
                         multi_qa_chat.append({"role": "assistant", "content": context_output})
 
-                # 2.3 process the output
+            # 2.5 process the output using mini_batch
+            for batch in tqdm(
+                    fu.batched(zip(all_instance_ids, all_chat_messagges, outputs, all_sententes), batch_size),
+                    desc=f'process output by {annotator_name}, dataset {dataset_name}'
+            ):
+                # an element of batch is a tuple like (instance_id, chat_message, output, sentence)
                 if anno_style == 'single_type':
                     tmp_pred_spans = []
-                    for out_idx, (instance_id, output, sent) in enumerate(zip(batch_instance_ids, outputs, batch_sents)):
-                        output_texts.append(output)
+                    for out_idx, (instance_id, chat_message, output, sent) in enumerate(batch):
                         out_spans = self._process_output(output, sent, anno_style=anno_style)
                         if len(out_spans) == 0:
                             continue
@@ -1128,46 +1095,25 @@ class Annotation(Label):
                     pred_spans += tmp_pred_spans
                     instance_results.append({'id': instance_id, 'sent': sent, 'pred_spans': tmp_pred_spans})
                 else:
-                    for out_idx, (instance_id, output, sent) in enumerate(zip(batch_instance_ids, outputs, batch_sents)):
-                        output_texts.append(output)
-                        if anno_style == 'multi_type' or anno_style == 'cand_mention_type' or anno_style == 'subset_type' or anno_style == 'subset_cand':
-                            # if multi_qa, we have processed the output immediately after getting the response in 3.2
-                            # so we just skip the processing here
-                            # only 'batch_qa' need to process the output here
-                            if kwargs['dialogue_style'] == 'multi_qa':
-                                continue
+                    for out_idx, (instance_id, chat_message, output, sent) in enumerate(batch):
+                        # if multi_qa, we have processed the output immediately after getting the response in 2.4
+                        # so we just skip the processing here
+                        # only 'batch_qa' need to process the output here
+                        if kwargs['dialogue_style'] == 'multi_qa':
+                            continue
 
-                            # the method of processing output of cand_mention_prompt and 'subset_type_prompt' are same to that of 'multi_type_prompt'
-                            out_spans = self._process_output(output, sent, anno_style=anno_style)
-                            if len(out_spans) == 0:
-                                continue
-                            tmp_pred_spans = []
-                            for start, end, span, label in set(out_spans):
-                                if label not in self.label2id.keys():
-                                    label = 'O'
-                                out_label_id = self.label2id[label]
-                                pred_spans.append((str(start), str(end), span, str(out_label_id)))
-                                tmp_pred_spans.append((str(start), str(end), span, str(out_label_id)))
-                            instance_results.append({'id':instance_id, 'sent': sent, 'pred_spans': tmp_pred_spans})
-                        else:
-                            out_label = self._process_output(output, sent, anno_style=anno_style)
-                            if out_label not in self.label2id.keys():
-                                # check if the output label is redundant
-                                tmp_out_label_0 = out_label.split(' ')[0].strip()
-                                tmp_out_label_1 = out_label.split(',')[0].strip()
-                                if tmp_out_label_0 in self.label2id.keys():
-                                    out_label = tmp_out_label_0
-                                elif tmp_out_label_1 in self.label2id.keys():
-                                    out_label = tmp_out_label_1
-                                else:
-                                    out_label = 'O'
-
-                            out_label_id = self.label2id[out_label]
-                            res_labels.append(out_label)
-                            res_label_ids.append(out_label_id)
-                            batch_res_label_ids.append(out_label_id)
-                            out_span = batch_spans[out_idx]
-                            pred_spans.append((*out_span, str(out_label_id)))
+                        # the method of processing output of cand_mention_prompt and 'subset_type_prompt' are same to that of 'multi_type_prompt'
+                        out_spans = self._process_output(output, sent, anno_style=anno_style)
+                        if len(out_spans) == 0:
+                            continue
+                        tmp_pred_spans = []
+                        for start, end, span, label in set(out_spans):
+                            if label not in self.label2id.keys():
+                                label = 'O'
+                            out_label_id = self.label2id[label]
+                            pred_spans.append((str(start), str(end), span, str(out_label_id)))
+                            tmp_pred_spans.append((str(start), str(end), span, str(out_label_id)))
+                        instance_results.append({'id':instance_id, 'sent': sent, 'pred_spans': tmp_pred_spans})
 
             # 3. cache and evaluate the annotation result
             # y_true is shape of [(start, end (excluded), gold_mention_span, gold_label_id), ...]
@@ -1176,21 +1122,21 @@ class Annotation(Label):
             y_true = [span_label for spans_labels in dataset['spans_labels'] for span_label in spans_labels]  # flatten the spans_labels
             res_y_true = [y_true]
             res_pred_spans = [pred_spans]
-            res_output_texts = [output_texts]
+            res_outputs = [outputs]
 
             if len(instance_results) > 0:  # for multi/single type prompt, we have instance_results
                 ins_res = [instance_results]
                 cache_result = {
                     "y_true": res_y_true, # the gold span and its label, shaped like [(start, end (excluded), gold_mention_span, gold_label_id), ...]
                     "pred_spans": res_pred_spans, # the predicted spans and its label, shaped like [(start, end (excluded), pred_mention_span, pred_label_id), ...]
-                    "output_text": res_output_texts, # the output text for each instance, shaped like [out_text_0, out_text1, ...]
+                    "output_text": res_outputs, # the output text for each instance, shaped like [out_text_0, out_text1, ...]
                     "instance_results": ins_res  # the sentence, pred spans, gold results for each instance, shaped like [{'sent': sent_0, 'pred_spans': [(start, end, span, label), ...]}, ...]
                 }
             else:  # for other settings, we do not have instance_results
                 cache_result = {
                     "y_true": res_y_true,  # the gold span and its label, shaped like [(start, end (excluded), gold_mention_span, gold_label_id), ...]
                     "pred_spans": res_pred_spans,  # the predicted spans and its label, shaped like [(start, end (excluded), pred_mention_span, pred_label_id), ...]
-                    "output_text": res_output_texts  # # the output text for each instance, shaped like [out_text_0, out_text1, ...]
+                    "output_text": res_outputs  # # the output text for each instance, shaped like [out_text_0, out_text1, ...]
                 }
 
             cache_result = Dataset.from_dict(cache_result)

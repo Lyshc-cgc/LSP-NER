@@ -39,7 +39,7 @@ def main():
     annotator = Annotator(annotator_cfg, api_cfg)
 
     # 2.2 annotation prompt settings
-    for prompt_type in ['sc_fs', 'mt_fs']:
+    for prompt_type in ['mt_fs', 'sc_fs', 'st_fs']:
         assert prompt_type in ('mt_fs', 'st_fs', 'sb_fs', 'sc_fs')
 
         # 2.3 test subset sampling settings
@@ -56,11 +56,13 @@ def main():
         # 'batch-qa' for batch QA, we use new context for each query.
         dialogue_style = 'batch_qa'
         assert dialogue_style in {'multi_qa', 'batch_qa'}
-        if prompt_type == 'sc_fs':
-            assert dialogue_style == 'batch_qa'
-        if dialogue_style == 'multi_qa':
-            logger.error('multi_qa style cannot support batch inference')
-            annotator.batch_infer = False  # set batch_infer to False for multi_qa
+        if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
+            logger.error('multi_qa style only support mt_fs')
+            dialogue_style = 'batch_qa'
+        if dialogue_style == 'multi_qa' and annotator.batch_infer:
+            logger.error('batch_qa style cannot support batch inference')
+            annotator.batch_infer = False  # set batch_infer to False for batch_qa
+
         # 2.5 other testing settings
         if prompt_type == 'sc_fs':
             subset_sizes = [0.1, 0.2, 0.3, 0.4, 0.5] # label subset sizes for sc_fs
