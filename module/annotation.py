@@ -1041,7 +1041,8 @@ class Annotation(Label):
                     use_api=self.annotator.use_api,
                     dialogue_style=anno_cfg['dialogue_style'],
                     ignore_sent=anno_cfg['ignore_sent'],
-                    label_mention_map_portion=anno_cfg['label_mention_map_portion']
+                    label_mention_map_portion=anno_cfg['label_mention_map_portion'],
+                    dataset_name=dataset_name
                 )
 
             # 2. batch process

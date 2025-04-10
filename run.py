@@ -2,6 +2,7 @@ import os
 import asyncio
 import xlsxwriter
 import multiprocess
+import multiprocessing
 
 import module.func_util as fu
 from module import Annotation, Processor, Annotator
@@ -9,7 +10,7 @@ from module import Annotation, Processor, Annotator
 dataset_names = ['ontonotes5', 'mit_movies']  # 'conll2003', 'ontonotes5', 'mit_restaurant', 'mit_movies'
 use_api = False
 api_model = 'deepseek'  # 'qwen', 'deepseek', 'glm', 'gpt'
-local_model = 'Qwen1.5'  # 'Qwen1.5', 'Mistral'
+local_model = 'Mistral'  # 'Qwen1.5', 'Mistral'
 seeds = [22, 32, 42]
 test_subset_size = 200
 concurrency_level = 10  # number of concurrent requests
@@ -20,8 +21,20 @@ logger = fu.get_logger('run_script')
 async def main():
 
     config = fu.get_config('config.yml')
+    # 1. load annotator
+    # api annotator
+    assert api_model in ('qwen', 'deepseek', 'glm', 'gpt')
+    api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
+
+    # local annotator
+    assert local_model in ('Qwen1.5', 'Mistral')  # add more
+    annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
+
+    # init annotator
+    annotator = Annotator(annotator_cfg, api_cfg)
+
     for dataset_name in dataset_names:
-        # 1. load and pre-process the data
+        # 2. load and pre-process the data
         assert dataset_name in config['data_cfgs'].keys()
 
         # label form
@@ -32,20 +45,8 @@ async def main():
         proc = Processor(data_cfg, labels_cfg, natural_form)
         dataset = proc.process()
 
-        # 2. annotate the data by LLMs
-        # 2.1 api annotator config (optional) and local annotator config
-        # api annotator
-        assert api_model in ('qwen', 'deepseek', 'glm', 'gpt')
-        api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
-
-        # local annotator
-        assert local_model in ('Qwen1.5', 'Mistral')  # add more
-        annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
-
-        # init annotator
-        annotator = Annotator(annotator_cfg, api_cfg)
-
-        # 2.2 test subset sampling settings
+        # 3. annotate the data by LLMs
+        # 3.1 test subset sampling settings
         # 'random' for random sampling. Each instance has the same probability of being selected.
         # 'lab_uniform' for uniform sampling at label-level. Choice probability is uniform for each label.
         # 'proportion' for proportion sampling. Choice probability is proportional to the number of entities for each label.
@@ -53,13 +54,13 @@ async def main():
         sampling_strategy = 'random'
         assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample')
 
-        # 2.3 dialogue style settings
+        # 3.2 dialogue style settings
         # 'multi-qa' for multi-turn QA, we concatenate the output of the previous turn with the input of the current turn.
         # 'batch-qa' for batch QA, we use new context for each query.
         dialogue_style = 'multi_qa'
         assert dialogue_style in ('multi_qa', 'batch_qa')
 
-        # 2.4 annotation prompt settings
+        # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
         for prompt_type in ['mt_fs']: # 'mt_fs', 'st_fs', 'sc_fs',
             assert prompt_type in ('mt_fs', 'st_fs', 'sb_fs', 'sc_fs')
@@ -71,7 +72,7 @@ async def main():
                 logger.error('batch_qa style cannot support batch inference using API')
                 annotator.batch_infer = False  # set batch_infer to False for batch_qa
 
-            # 2.5 other testing settings
+            # 3.4 other testing settings
             # if prompt_type == 'sc_fs':
             #     subset_sizes = [0.1, 0.2, 0.3, 0.4, 0.5] # label subset sizes for sc_fs
             # else:
@@ -87,7 +88,7 @@ async def main():
             anno_cfg_paths = config['anno_cfgs'][prompt_type]
             anno_cfgs = [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
 
-            # 3. start annotation
+            # 5. start annotation
             results = []  # for storing the results with different cfg and seeds
             for ignore_sent, label_mention_map_portions in zip(ignore_sent_set, label_mention_map_portions_set):
                 for label_mention_map_portion in label_mention_map_portions:
@@ -151,7 +152,7 @@ async def main():
                             # 4. save the results to a excel file
                             results += await asyncio.gather(*tasks)
 
-            # 4. save all the metrics to excel files
+            # 6. save all the metrics to excel files
             start_row = 2  # the starting row of the excel file
             excel_file = f'{dataset_name}_metrics.xlsx'
             workbook = xlsxwriter.Workbook(excel_file)  # write metric to excel
@@ -177,4 +178,5 @@ if __name__ == '__main__':
     # set 'spawn' start method in the main process to parallelize computation across several GPUs when using multi-processes in the map function
     # refer to https://huggingface.co/docs/datasets/process#map
     multiprocess.set_start_method('spawn')
+    multiprocessing.set_start_method('spawn')
     asyncio.run(main())
