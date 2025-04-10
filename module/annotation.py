@@ -8,13 +8,16 @@ import xlsxwriter
 import jsonlines
 import time
 import openai
+import asyncio
+import concurrent.futures
 import uuid
 
 from pathlib import Path
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from datasets import load_from_disk, Dataset
 from tqdm import tqdm
-from module import func_util as fu
+from tqdm.asyncio import tqdm_asyncio
+import module.func_util as fu
 from module.label import Label
 
 logger = fu.get_logger('Annotation')
@@ -43,7 +46,7 @@ class Annotator:
         if not just_test:
             logger.info('----- Init LLM -----')
             if self.use_api:
-                self.client = OpenAI(
+                self.client = AsyncOpenAI(
                     api_key=os.getenv(self.api_cfg['api_key']),
                     base_url=self.api_cfg['base_url'],  # base_url
                     max_retries=3,
@@ -630,12 +633,19 @@ class Annotation(Label):
                         continue
             return out_label
 
-    def get_response(self, client, chat_message, api_cfg, **kwargs):
+    @staticmethod
+    async def get_response(client, model_name, chat_message, semaphore, **kwargs):
         """
         Get the response of the annotator using api.
         :param client: the client of the LLM API
+        :param model_name: model name you used
         :param chat_message: the chat message to be sent to the api.
-        :param api_cfg: the configuration of the api settings
+        :param semaphore: the semaphore to limit the number of concurrent requests
+        :param kwargs: other parameters, including,
+            1) stream, whether to use stream mode in batch inference api
+            2) temperature, the temperature of the api model
+            3) top_p, the top_p of the api model
+            4) max_tokens, the max tokens of the api model
         :return:
         """
         # https://help.aliyun.com/zh/dashscope/developer-reference/compatibility-of-openai-with-dashscope
@@ -643,14 +653,15 @@ class Annotation(Label):
         output = '[]'
         try:
             logger.info('--------------- get response ---------------')
-            completion = client.chat.completions.create(
-                model=api_cfg['model'],
-                messages=chat_message,
-                stream=kwargs['stream'],
-                top_p=kwargs['top_p'],
-                temperature=kwargs['temperature'],
-                max_tokens=kwargs['max_tokens'],
-            )
+            async with semaphore:
+                completion = await client.chat.completions.create(
+                    model=model_name,
+                    messages=chat_message,
+                    stream=kwargs['stream'],
+                    top_p=kwargs['top_p'],
+                    temperature=kwargs['temperature'],
+                    max_tokens=kwargs['max_tokens'],
+                )
             output = completion.choices[0].message.content
             logger.debug(output)
         except openai.APIConnectionError as e:
@@ -663,14 +674,16 @@ class Annotation(Label):
             logger.error(f"other exception: {e}")
         return output
 
-    def get_batch_response(self, client, all_chat_message_info, api_cfg, anno_cfg, **kwargs):
+    @staticmethod
+    async def get_batch_response(client, model_name, all_chat_message_info, semaphore, anno_cfg, **kwargs):
         """
         Get the response of the annotator using batch inference.
         reffer to https://help.aliyun.com/zh/model-studio/batch-interfaces-compatible-with-openai
         :param client: the client of the LLM API
+        :param model_name: model name you used
         :param all_chat_message_info: all the chat messages info to be sent to the api.
             an element of all_chat_message_info is a tuple like (instance_id, chat_message, sentence, query)
-        :param api_cfg: the configuration of the api settings
+        :param semaphore: the semaphore to limit the number of concurrent requests
         :param anno_cfg: the configuration of the annotation settings
         :param kwargs: other parameters, including,
             1) anno_style, the annotation style including 'single_type', 'multi_type', 'subset_type', 'subset_cand'
@@ -683,7 +696,7 @@ class Annotation(Label):
             8) max_tokens, the max tokens of the api model
         :return:
         """
-        def init_input_file(input_file, all_chat_message_info, anno_style):
+        def init_input_file(input_file, all_chat_message_info):
             """
             init input file, a jsonline file
             # multi-line like
@@ -695,7 +708,6 @@ class Annotation(Label):
             :param input_file: the path of the input file
             :param all_chat_message_info: all the chat messages info to be sent to the api.
                 an element of all_chat_message_info is a tuple like (instance_id, chat_message, sentence, query)
-            :param anno_style: the annotation style including 'single_type', 'multi_type', 'subset_type', 'subset_cand'
             :return:
             """
             with jsonlines.open(input_file, 'w') as writer:
@@ -706,7 +718,7 @@ class Annotation(Label):
                         "method": "POST",
                         "url": "/v1/chat/ds-test",  # /v1/chat/completions
                         "body": {
-                            "model": 'batch-test-model',  # api_cfg['model']
+                            "model": 'batch-test-model',  # model_name
                             "messages": chat,
                             "stream": kwargs.get('stream', False),
                             "top_p": kwargs.get('top_p', 0.5),
@@ -717,18 +729,18 @@ class Annotation(Label):
                     writer.write(line)
             logger.info(f"Init input file {input_file} success!\n")
 
-        def upload_file(file_path):
+        async def upload_file(file_path):
             """
             upload the input file to the server
             :param file_path: the path of the input file
             :return:
             """
             logger.info(f"Uploading JSONL file containing requests...")
-            file_object = client.files.create(file=Path(file_path), purpose="batch")
+            file_object = await client.files.create(file=Path(file_path), purpose="batch")
             logger.info(f"Uploading success! Got file ID: {file_object.id}\n")
             return file_object.id
 
-        def create_batch_job(input_file_id):
+        async def create_batch_job(input_file_id):
             """
             create a batch job based on the input file ID
             :param input_file_id: the ID of the input file
@@ -736,47 +748,50 @@ class Annotation(Label):
             """
             logger.info(f"Creating Batch Task based on file ID...")
             # if using Embedding model, set 'endpoint' with '/v1/embeddings'
-            batch = client.batches.create(
+            batch_job = await client.batches.create(
                 input_file_id=input_file_id,
-                endpoint="/v1/chat/completions",
+                endpoint="/v1/chat/ds-test",  # /v1/chat/completions
                 completion_window="24h")
-            logger.info(f"Creating a Batch Task success! Got Batch Task ID: {batch.id}\n")
-            return batch.id
+            logger.info(f"Creating a Batch Task success! Got Batch Task ID: {batch_job.id}\n")
+            return batch_job.id
 
-        def check_job_status(batch_id):
+        async def check_job_status(batch_id):
             """
             check the job status of the batch task
             :param batch_id: the ID of the batch task
             :return:
             """
             logger.info(f"Checking the job status of the Batch Task (id {batch_id})...")
-            batch = client.batches.retrieve(batch_id=batch_id)
+            async with semaphore:
+                batch = await client.batches.retrieve(batch_id=batch_id)
             logger.info(f"Batch Task status: {batch.status}\n")
             return batch.status
 
-        def get_output_id(batch_id):
+        async def get_output_id(batch_id):
             """
             get the output file ID of the successful execution request in the Batch Task
             :param batch_id: the ID of the batch task
             :return:
             """
             logger.info(f"Getting output file ID of the successful execution request in the Batch Task (id {batch_id})...")
-            batch = client.batches.retrieve(batch_id=batch_id)
+            async with semaphore:
+                batch = await client.batches.retrieve(batch_id=batch_id)
             logger.info(f"Output file ID: {batch.output_file_id}\n")
             return batch.output_file_id
 
-        def get_error_id(batch_id):
+        async def get_error_id(batch_id):
             """
             get the output file ID of the unsuccessful executing requests in the Batch Task
             :param batch_id: the ID of the batch task
             :return:
             """
             logger.info(f"Getting output file ID for executing error requests in the Batch task (id {batch_id})...")
-            batch = client.batches.retrieve(batch_id=batch_id)
+            async with semaphore:
+                batch = await client.batches.retrieve(batch_id=batch_id)
             logger.info(f"Errot file ID: {batch.error_file_id}\n")
             return batch.error_file_id
 
-        def download_results(output_file_id, output_file_path):
+        async def download_results(output_file_id, output_file_path):
             """
             download the successful results of the batch task
             :param output_file_id: the ID of the output file
@@ -784,14 +799,14 @@ class Annotation(Label):
             :return:
             """
             logger.info(f"downloading successful results of the batch task...")
-            content = client.files.content(output_file_id)
+            content = await client.files.content(output_file_id)
             # print part of the content for testing
             logger.info(f"Print the first 1000 characters of the successful request result: {content.text[:1000]}...\n")
             # save results to local
             content.write_to_file(output_file_path)
             logger.info(f"save successful results to {output_file_path}\n")
 
-        def download_errors(error_file_id, error_file_path):
+        async def download_errors(error_file_id, error_file_path):
             """
             download the unsuccessful results of the batch task
             :param error_file_id: the ID of the error file
@@ -799,7 +814,7 @@ class Annotation(Label):
             :return:
             """
             logger.info(f"downloading unsuccessful results of the batch task...")
-            content = client.files.content(error_file_id)
+            content = await client.files.content(error_file_id)
             # print part of the content for testing
             logger.info(f"Print the first 1000 characters of the unsuccessful request result: {content.text[:1000]}...\n")
             # save error content  to local
@@ -831,45 +846,66 @@ class Annotation(Label):
         # 2. init input file, a jsonline file
         if not os.path.exists(input_file):
             logger.info(f"Input file doesn't exist. Init input file {input_file}...")
-            init_input_file(input_file, all_chat_message_info, anno_style=kwargs['anno_style'])
+            with concurrent.futures.ThreadPoolExecutor() as pool:  # use ThreadPoolExecutor to run the function in a separate thread
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    pool,
+                    init_input_file,
+                    input_file,
+                    all_chat_message_info,
+                )
         if os.path.exists(output_file):  # if the output file exists, read it and return
             logger.info(f"Output file exist! Read cache from: {output_file}...")
-            outputs = extract_outputs(output_file)
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                loop = asyncio.get_running_loop()
+                outputs = await loop.run_in_executor(
+                    pool,
+                    extract_outputs,
+                    output_file
+                )
             return outputs
         try:
             # Step 1: 上传包含请求信息的JSONL文件,得到输入文件ID,如果您需要输入OSS文件,可将下行替换为：input_file_id = "实际的OSS文件URL或资源标识符"
-            input_file_id = upload_file(input_file)
+            input_file_id = await upload_file(input_file)
             # Step 2: 基于输入文件ID,创建Batch任务
-            batch_id = create_batch_job(input_file_id)
+            batch_id = await create_batch_job(input_file_id)
             # Step 3: 检查Batch任务状态直到结束
             status = ""
             while status not in ["completed", "failed", "expired", "cancelled"]:
-                status = check_job_status(batch_id)
+                status = await check_job_status(batch_id)
                 logger.info(f"waiting fot the batch task (id {batch_id}) complete...")
-                time.sleep(10)  # 等待10秒后再次查询状态
+                await asyncio.sleep(10)  # 等待10秒后再次查询状态
             # 如果任务失败,则打印错误信息并退出
             if status == "failed":
-                batch = client.batches.retrieve(batch_id)
+                batch = await client.batches.retrieve(batch_id)
                 logger.error(f"Batch task fail. Error message:{batch.errors}\n")
                 logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
                 return
             # Step 4: 下载结果：如果输出文件ID不为空,则打印请求成功结果的前1000个字符内容，并下载完整的请求成功结果到本地输出文件;
             # 如果错误文件ID不为空,则打印请求失败信息的前1000个字符内容,并下载完整的请求失败信息到本地错误文件.
-            output_file_id = get_output_id(batch_id)
+            output_file_id = await get_output_id(batch_id)
             if output_file_id:
-                download_results(output_file_id, output_file)
-            error_file_id = get_error_id(batch_id)
+                await download_results(output_file_id, output_file)
+            error_file_id = await get_error_id(batch_id)
             if error_file_id:
-                download_errors(error_file_id, error_file)
+                await download_errors(error_file_id, error_file)
                 logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
 
-        outputs = extract_outputs(output_file)
+        # Step 5: 读取输出文件,提取输出结果
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            loop = asyncio.get_running_loop()
+            logger.info(f"Extracting outputs from {output_file}...")
+            outputs = await loop.run_in_executor(
+                pool,
+                extract_outputs,
+                output_file
+            )
         return outputs
 
-    def annotate_by_one(self,dataset, anno_cfg, **kwargs):
+    async def annotate_by_one(self,dataset, anno_cfg, **kwargs):
         """
         Annotate the dataset by one specific annotator.
         :param dataset: the dataset to be annotated
@@ -1017,14 +1053,16 @@ class Annotation(Label):
 
             # 2.3 use batch inference with api.
             # Prioritize judging and executing this code segment
+            semaphore = asyncio.Semaphore(self.annotator.api_cfg['concurrency_level'])  # limit the number of concurrent requests
             if self.annotator.use_api and self.annotator.batch_infer:
                 logger.info('using batch inference with api to annotate...')
                 # use batch inference
                 # 2.3.1 get the response of the annotator
-                outputs = self.get_batch_response(
+                outputs = await self.get_batch_response(
                     client=self.annotator.client,
                     all_chat_message_info=zip(all_instance_ids, all_chat_messagges, all_sententes, all_queries),
-                    api_cfg=self.annotator.api_cfg,
+                    model_name=model_name,
+                    semaphore=semaphore,
                     anno_cfg=anno_cfg,
                     anno_style=anno_style,
                     dataset_name=dataset_name,
@@ -1041,15 +1079,23 @@ class Annotation(Label):
                 if self.annotator.use_api:
                     # use LLM API and batch_qa
                     logger.info('using api with batch_qa to annotate...')
-                    for chat in tqdm(all_chat_messagges, desc=f'annotating by {annotator_name}, dataset {dataset_name}'):
-                        output = self.get_response(client=self.annotator.client,
-                                                   chat_message=chat,
-                                                   api_cfg=self.annotator.api_cfg,
-                                                   stream=self.annotator.annotator_cfg['stream'],
-                                                   temperature=self.annotator.annotator_cfg['anno_temperature'],
-                                                   top_p=self.annotator.annotator_cfg['anno_top_p'],
-                                                   max_tokens=self.annotator.annotator_cfg['anno_max_tokens'])
-                        outputs.append(output)
+                    tasks = []  # store the tasks for each instance
+                    for chat in all_chat_messagges:
+                        tasks.append(
+                            self.get_response(
+                                client=self.annotator.client,
+                                model_name=model_name,
+                                chat_message=chat,
+                                semaphore=semaphore,
+                                stream=self.annotator.annotator_cfg['stream'],
+                                temperature=self.annotator.annotator_cfg['anno_temperature'],
+                                top_p=self.annotator.annotator_cfg['anno_top_p'],
+                                max_tokens=self.annotator.annotator_cfg['anno_max_tokens']
+                            )
+                        )
+                    outputs = await tqdm_asyncio.gather(
+                        *tasks, desc=f'annotating by {annotator_name}, dataset {dataset_name}'
+                    )
                 else:
                     # use local annotator and batch_qa
                     # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
@@ -1084,12 +1130,11 @@ class Annotation(Label):
                         query_count += len(batch_outputs)
                         outputs += batch_outputs
             elif not self.annotator.batch_infer and kwargs['dialogue_style'] == 'multi_qa':
-                multi_qa_chat = []
-
                 for batch in tqdm(
                     fu.batched(zip(all_instance_ids, all_chat_messagges, all_sententes, all_queries), batch_size),
                     desc=f'annotating by {annotator_name}, dataset {dataset_name}'
                 ):
+                    multi_qa_chat = []  # store chat context for this batch
                     for idx, (instance_id, chat, sent, query) in enumerate(batch):
                         # chat[0] is the user role message
                         if idx == 0:
@@ -1097,16 +1142,26 @@ class Annotation(Label):
                         else:
                             multi_qa_chat.append({"role": "user", "content": query})
                         if self.annotator.use_api:  # use LLM API and multi_qa
-                            output_text = self.get_response(client=self.annotator.client,
-                                                            chat_message=multi_qa_chat,
-                                                            api_cfg=self.annotator.api_cfg,
-                                                            stream=self.annotator.annotator_cfg['stream'],
-                                                            temperature=self.annotator.annotator_cfg['anno_temperature'],
-                                                            top_p=self.annotator.annotator_cfg['anno_top_p'],
-                                                            max_tokens=self.annotator.annotator_cfg['anno_max_tokens'])
+                            output_text = await self.get_response(
+                                client=self.annotator.client,
+                                model_name=model_name,
+                                chat_message=multi_qa_chat,
+                                semaphore=semaphore,
+                                stream=self.annotator.annotator_cfg['stream'],
+                                temperature=self.annotator.annotator_cfg['anno_temperature'],
+                                top_p=self.annotator.annotator_cfg['anno_top_p'],
+                                max_tokens=self.annotator.annotator_cfg['anno_max_tokens']
+                            )
                         else:  # use local annotator and multi_qa
-                            templated_multi_qa_chat = self.annotator.anno_tokenizer.apply_chat_template(multi_qa_chat, add_generation_prompt=True,tokenize=False)
-                            tmp_outputs = self.annotator.anno_model.generate(templated_multi_qa_chat, self.annotator.sampling_params)  # len(tmp_outputs) == 1
+                            templated_multi_qa_chat = self.annotator.anno_tokenizer.apply_chat_template(
+                                multi_qa_chat,
+                                add_generation_prompt=True,
+                                tokenize=False
+                            )
+                            tmp_outputs = self.annotator.anno_model.generate(
+                                templated_multi_qa_chat,
+                                self.annotator.sampling_params
+                            )  # len(tmp_outputs) == 1
 
                             prompt_lens = [len(e.prompt_token_ids) for e in tmp_outputs]
                             logger.info(f'prompt average length: {sum(prompt_lens) // len(prompt_lens)} tokens')

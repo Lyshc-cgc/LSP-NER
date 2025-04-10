@@ -7,7 +7,7 @@ import multiprocess
 
 from tqdm import tqdm
 from datasets import load_dataset, load_from_disk, Dataset
-from module import func_util as fu
+import module.func_util as fu
 from module.label import Label
 
 logger = fu.get_logger('Processor')

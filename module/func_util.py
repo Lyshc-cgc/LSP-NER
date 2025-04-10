@@ -4,6 +4,8 @@ import re
 import yaml
 import itertools
 import logging
+import asyncio
+
 import pandas as pd
 from collections import Counter
 # from scipy.stats import norm
@@ -11,8 +13,34 @@ from collections import Counter
 from yaml import SafeLoader
 from tqdm import tqdm
 
+# LOGGER_FORMAT ={
+#     'normal': '[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d ] -- %(message)s',
+#     'coroutine': '[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d | %(coroutine_id)s ] -- %(message)s'
+# }
 
-def get_logger(name, level=logging.INFO, filename='test.log'):
+# 自定义日志过滤器
+class CoroutineIDFilter(logging.Filter):
+    def __init__(self):
+        """
+        Initialize the filter with the total number of tasks.
+        :param total_tasks: tasks for 3 seeds. Default 3.
+        """
+        super().__init__()
+
+    def filter(self, record):
+        # 获取当前协程任务
+        try:
+            current_task = asyncio.current_task()
+        except Exception:
+            current_task = None
+        if current_task:
+            # 为每条记录添加协程名
+            record.coroutine = f"coroutine: {current_task}"
+        else:
+            record.coroutine = "coroutine: N"
+        return True
+
+def get_logger(name, level=logging.INFO, filename='test.log', total_tasks=3):
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
@@ -29,12 +57,16 @@ def get_logger(name, level=logging.INFO, filename='test.log'):
     console_handler.setLevel(level)
 
     # format
-    formatter = logging.Formatter('[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d ] -- %(message)s')
+    formatter = logging.Formatter('[%(asctime)s |%(levelname)s |%(name)s |%(filename)s:%(lineno)d |%(coroutine)s ] -- %(message)s')
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
+
+    # 添加自定义过滤器
+    logger.addFilter(CoroutineIDFilter())
+
     return logger
 
 def get_config(cfg_file):

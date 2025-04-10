@@ -5,6 +5,7 @@ qwen:
   model: qwen2.5-72b-instruct # qwen-long, qwen-plus
   api_key: DASHSCOPE_API_KEY  # the os environment variable name
   batch_infer: True  # whether to use the batch inference
+  concurrency_level: 2 # the concurrency level for api request
 
 #deepseek:
 #  base_url: https://api.deepseek.com/v1
@@ -17,6 +18,7 @@ deepseek:
   model: deepseek-v3
   api_key: DASHSCOPE_API_KEY  # the os environment variable name, DEEPSEEK_API_KEY for official key from DeepSeek
   batch_infer: True  # whether to use the bacth api
+  concurrency_level: 2 # the concurrency level for api request
 
 gpt:
   base_url: https://fastapi.top/v1
@@ -24,5 +26,6 @@ gpt:
   model: gpt-4o-mini # gpt-4o-mini, gpt-3.5-turbo(gpt-3.5-turbo-0125), gpt-3.5-turbo-instruct
   api_key: OPENAI_API_KEY  # the os environment variable name
   batch_infer: False  # whether to use the bacth api
+  concurrency_level: 2 # the concurrency level for api request
 
 # add more model api that are openai-compatible here
