@@ -3,7 +3,6 @@ import copy
 import random
 import math
 import jsonlines
-import multiprocess
 
 from tqdm import tqdm
 from datasets import load_dataset, load_from_disk, Dataset
@@ -315,10 +314,6 @@ class Processor(Label):
         # with_rank is used to determine whether to assign a value to the rank parameter in the map function
         continue_dir = os.path.join(self.config['continue_dir'], f'span_{self.natural_flag}')  # the directory to store the continued data to be annotated
         ss_cache_dir = os.path.join(self.config['ss_cache_dir'], f'span_{self.natural_flag}')  # the directory to cache the support set
-
-        # set 'spawn' start method in the main process to parallelize computation across several GPUs when using multi-processes in the map function
-        # refer to https://huggingface.co/docs/datasets/process#map
-        multiprocess.set_start_method('spawn')
 
         # 1. check and load the cached formatted dataset
         try:

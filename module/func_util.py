@@ -1,46 +1,61 @@
+import sys
+import os
 import math
 import random
 import re
 import yaml
 import itertools
 import logging
-import asyncio
+import contextvars
 
 import pandas as pd
 from collections import Counter
 # from scipy.stats import norm
 # from statsmodels.stats import inter_rater as irr
+from aiologger import Logger
+from aiologger.handlers.streams import AsyncStreamHandler
+from aiologger.handlers.files import AsyncFileHandler
+from aiologger.formatters.base import Formatter
 from yaml import SafeLoader
 from tqdm import tqdm
 
-# LOGGER_FORMAT ={
-#     'normal': '[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d ] -- %(message)s',
-#     'coroutine': '[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d | %(coroutine_id)s ] -- %(message)s'
-# }
+# a context variable used to record coroutine id
+coroutine_id_var = contextvars.ContextVar('coroutine_id', default=None)
 
-# 自定义日志过滤器
-class CoroutineIDFilter(logging.Filter):
-    def __init__(self):
-        """
-        Initialize the filter with the total number of tasks.
-        :param total_tasks: tasks for 3 seeds. Default 3.
-        """
-        super().__init__()
+# formatter
+class CoroutineIDFormatter(Formatter):
+    def format(self, record):
+        # Get the coroutine ID from the context variable
+        coroutine_id = getattr(record, 'coroutine_id', 'N/A')
+        # Add the coroutine ID to the log record
+        record.coroutine_id = coroutine_id
+        return super().format(record)
 
-    def filter(self, record):
-        # 获取当前协程任务
-        try:
-            current_task = asyncio.current_task()
-        except Exception:
-            current_task = None
-        if current_task:
-            # 为每条记录添加协程名
-            record.coroutine = f"coroutine: {current_task}"
-        else:
-            record.coroutine = "coroutine: N"
-        return True
+def get_asy_logger(name, level=logging.INFO, log_file='test.log'):
+    logger: Logger = Logger(name=name, level=level)
 
-def get_logger(name, level=logging.INFO, filename='test.log', total_tasks=3):
+    # file handler
+    asy_file_handler = AsyncFileHandler(
+        filename=log_file,
+        encoding="utf8"
+    )
+
+    # stream handler
+    asy_stream_handler = AsyncStreamHandler(stream=sys.stdout)
+
+    # set format
+    formatter = CoroutineIDFormatter(
+        "%(asctime)s | %(levelname)s | %(name)s | %(coroutine_id)s | %(message)s"
+    )
+    asy_file_handler.formatter = formatter
+    asy_stream_handler.formatter = formatter
+
+    logger.add_handler(asy_file_handler)
+    logger.add_handler(asy_stream_handler)
+
+    return logger
+
+def get_logger(name, level=logging.INFO, filename='test.log'):
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
@@ -57,16 +72,12 @@ def get_logger(name, level=logging.INFO, filename='test.log', total_tasks=3):
     console_handler.setLevel(level)
 
     # format
-    formatter = logging.Formatter('[%(asctime)s |%(levelname)s |%(name)s |%(filename)s:%(lineno)d |%(coroutine)s ] -- %(message)s')
+    formatter = logging.Formatter('[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d ] -- %(message)s')
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-
-    # 添加自定义过滤器
-    logger.addFilter(CoroutineIDFilter())
-
     return logger
 
 def get_config(cfg_file):
@@ -432,3 +443,57 @@ def compute_label_coverage(label_sets: list, gold_label_sets: list):
     union_label_sets = label_sets + gold_label_sets
     # label_coverage1 = cover_num/len(union_label_sets)
     return label_coverage
+
+
+def write_metrics_to_excel(worksheet, start_row, res_file, anno_cfg):
+    """
+    write metrics to excel files
+
+    :param worksheet: the worksheet to write the metrics.
+    :param start_row: the row index we start. If the worksheet is new, start_row is 2. elif start_row > 2, it's the last row we add data.
+    :param res_file, the file to save the results
+    :param anno_cfg: the configuration of the annotation.
+    :return:
+    """
+
+    with open(res_file, 'r') as f:
+        eval_results = f.readlines()
+
+    metric_num = len(eval_results)  # the number of metrics
+    if start_row == 2:  # it's a new worksheet
+        worksheet.write(0, 0, 'label_mention_map_portion')
+        worksheet.write(0, 1, 'rep_num')
+        worksheet.write(0, 2, '5-shot')
+        worksheet.write(0, metric_num + 4, '1-shot')
+        if anno_cfg['k_shot'] == 5:  # 5-shot
+            head_row, head_col = 1, 3  # headers start from (1, 3)
+            data_row, data_col = 2, 3  # datas start from (2, 3)
+        else:  # 1-shot
+            head_row, head_col = 1, metric_num + 4  # headers start from (1, metric_num + 4)
+            data_row, data_col = 2, metric_num + 4  # datas start from (2, metric_num + 4)
+    elif start_row > 2:  # we continue to write data to the older worksheet
+        if anno_cfg['k_shot'] == 5:  # 5-shot
+            head_row, head_col = 1, 3  # headers start from (1, 3)
+            data_row, data_col = start_row, 3  # datas start from (start_row, 3)
+        else:  # 1-shot
+            head_row, head_col = 1, metric_num + 4  # headers start from (1, metric_num + 4)
+            data_row, data_col = start_row, metric_num + 4  # datas start from (start_row, metric_num + 4)
+
+    if 'repeat_num' in anno_cfg.keys():
+        rep_num = anno_cfg['repeat_num']
+    elif 'demo_times':
+        rep_num = anno_cfg['demo_times']
+    worksheet.write(data_row, 0, anno_cfg['label_mention_map_portion'])
+    worksheet.write(data_row, 1, rep_num)
+    worksheet.write(data_row, 2, anno_cfg['annotator_name'])
+    for line in eval_results:
+        line = line.strip()
+        line = line.split(' ')
+        metric, res = line[0], float(line[1])
+        if start_row == 2:  # header
+            worksheet.write(head_row, head_col, metric)
+            head_col += 1
+        worksheet.write(data_row, data_col, res)
+        data_col += 1
+    data_row += 1
+    return  data_row

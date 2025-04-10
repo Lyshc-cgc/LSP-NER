@@ -4,7 +4,6 @@ import math
 import random
 import re
 import os
-import xlsxwriter
 import jsonlines
 import time
 import openai
@@ -20,58 +19,86 @@ from tqdm.asyncio import tqdm_asyncio
 import module.func_util as fu
 from module.label import Label
 
+asy_logger = fu.get_asy_logger('Annotation')
 logger = fu.get_logger('Annotation')
 
 class Annotator:
-    def __init__(self, annotator_cfg, api_cfg, just_test=False):
+    _instance = None
+
+    def __new__(cls, annotator_cfg, api_cfg):
         """
-        Initialize the annotator model.
+        Ensure that only one instance of Annotator is created.
+        """
+        if cls._instance is None:
+            cls._instance = super(Annotator, cls).__new__(cls)
+            cls._instance.__init__(annotator_cfg, api_cfg)
+        return cls._instance
+
+    def __init__(self, annotator_cfg, api_cfg):
+        """
+        Initialize the Annotator.
 
         :param annotator_cfg: the configuration of the local annotator model.
         :param api_cfg: the configuration of the LLM API.
         :param annotator_cfg:
-        :param just_test: If True, we just want to test something in the Annotation, so that we don't need to load the model.
         """
-        self.use_api = True if api_cfg else False
-        self.batch_infer = api_cfg['batch_infer']
+        self.use_api = False
+        self.batch_infer = None
+        self.api_cfg = None
+        if api_cfg:
+            self.use_api = True
+            self.batch_infer = api_cfg['batch_infer']
+            self.client = None
+            self.api_cfg = api_cfg
+        else:
+            self.anno_model = None
+            self.sampling_params = None
+            self.anno_tokenizer = None
         self.annotator_cfg = annotator_cfg
-        self.api_cfg = api_cfg if api_cfg else None
 
+    def init_anno_model(self):
+        """
+        init the annotator model. We init anno model only when we start annotation process.
+        :return:
+        """
         # 1. GPU setting
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # avoid parallelism in tokenizers
-        cuda_devices = [str(i) for i in range(annotator_cfg['tensor_parallel_size'])]
+        cuda_devices = [str(i) for i in range(self.annotator_cfg['tensor_parallel_size'])]
         os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(cuda_devices)
 
         # 2. Init the annotating model
-        if not just_test:
-            logger.info('----- Init LLM -----')
-            if self.use_api:
-                self.client = AsyncOpenAI(
-                    api_key=os.getenv(self.api_cfg['api_key']),
-                    base_url=self.api_cfg['base_url'],  # base_url
-                    max_retries=3,
-                )
-            else:
-                from vllm import LLM, SamplingParams
-                # if not use api, we employ local annotator using vllm
-                # https://docs.vllm.ai/en/latest/getting_started/quickstart.html
-                self.anno_model = LLM(model=annotator_cfg['checkpoint'],
-                                      tensor_parallel_size=annotator_cfg['tensor_parallel_size'],
-                                      dtype=annotator_cfg['dtype'],
-                                      gpu_memory_utilization=annotator_cfg['gpu_memory_utilization'],
-                                      trust_remote_code=True,
-                                      # https://github.com/vllm-project/vllm/issues/6723
-                                      # set explicitly enable_chunked_prefill to False For Volta GPU
-                                      enable_chunked_prefill=False)
-                self.sampling_params = SamplingParams(temperature=annotator_cfg['anno_temperature'],
-                                                      top_p=annotator_cfg['anno_top_p'],
-                                                      max_tokens=annotator_cfg['anno_max_tokens'],
-                                                      repetition_penalty=annotator_cfg['repetition_penalty'])
+        logger.info('----- Init LLM -----')
+        if self.use_api and not self.client:
+            self.client = AsyncOpenAI(
+                api_key=os.getenv(self.api_cfg['api_key']),
+                base_url=self.api_cfg['base_url'],  # base_url
+                max_retries=3,
+            )
+        elif not self.anno_model and not self.sampling_params and not self.anno_tokenizer:
+            from vllm import LLM, SamplingParams
+            # if not use api, we employ local annotator using vllm
+            # https://docs.vllm.ai/en/latest/getting_started/quickstart.html
+            self.anno_model = LLM(
+                model=self.annotator_cfg['checkpoint'],
+                tensor_parallel_size=self.annotator_cfg['tensor_parallel_size'],
+                dtype=self.annotator_cfg['dtype'],
+                gpu_memory_utilization=self.annotator_cfg['gpu_memory_utilization'],
+                trust_remote_code=True,
+                # https://github.com/vllm-project/vllm/issues/6723
+                # set explicitly enable_chunked_prefill to False For Volta GPU
+                enable_chunked_prefill=False
+            )
+            self.sampling_params = SamplingParams(
+                temperature=self.annotator_cfg['anno_temperature'],
+                top_p=self.annotator_cfg['anno_top_p'],
+                max_tokens=self.annotator_cfg['anno_max_tokens'],
+                repetition_penalty=self.annotator_cfg['repetition_penalty']
+            )
 
-                # get anno_model's tokenizer to apply the chat template
-                # https://github.com/vllm-project/vllm/issues/3119
-                # anno_tokenizer = anno_model.llm_engine.tokenizer.tokenizer
-                self.anno_tokenizer = self.anno_model.get_tokenizer()
+            # get anno_model's tokenizer to apply the chat template
+            # https://github.com/vllm-project/vllm/issues/3119
+            # anno_tokenizer = anno_model.llm_engine.tokenizer.tokenizer
+            self.anno_tokenizer = self.anno_model.get_tokenizer()
 
 class Annotation(Label):
     """
@@ -91,8 +118,6 @@ class Annotation(Label):
 
         self.annotator = annotator
         self.natural_flag = 'natural' if natural_form else 'bio'  # use natural labels or bio labels
-        self.workbook = xlsxwriter.Workbook('metrics.xlsx')  # write metric to excel
-        self.worksheet = self.workbook.add_worksheet()  # default 'Sheet 1'
 
     def _init_chat_msg_template(self, examples, annotator_cfg, anno_cfg, **kwargs) -> list[None | dict[str, str]]:
         """
@@ -652,7 +677,7 @@ class Annotation(Label):
 
         output = '[]'
         try:
-            logger.info('--------------- get response ---------------')
+            asy_logger.info('--------------- get response ---------------')
             async with semaphore:
                 completion = await client.chat.completions.create(
                     model=model_name,
@@ -663,15 +688,15 @@ class Annotation(Label):
                     max_tokens=kwargs['max_tokens'],
                 )
             output = completion.choices[0].message.content
-            logger.debug(output)
+            asy_logger.debug(output)
         except openai.APIConnectionError as e:
-            logger.error(f"openai.APIConnectionError: {e}")
+            asy_logger.error(f"openai.APIConnectionError: {e}")
         except openai.RateLimitError as e:
-            logger.error(f"openai.RateLimitError: {e}")
+            asy_logger.error(f"openai.RateLimitError: {e}")
         except openai.APIStatusError as e:
-            logger.error(f"openai.APIStatusError: {e}, status code: {e.status_code}")
+            asy_logger.error(f"openai.APIStatusError: {e}, status code: {e.status_code}")
         except Exception as e:
-            logger.error(f"other exception: {e}")
+            asy_logger.error(f"other exception: {e}")
         return output
 
     @staticmethod
@@ -727,7 +752,7 @@ class Annotation(Label):
                         }
                     }
                     writer.write(line)
-            logger.info(f"Init input file {input_file} success!\n")
+            asy_logger.info(f"Init input file {input_file} success!\n")
 
         async def upload_file(file_path):
             """
@@ -735,9 +760,9 @@ class Annotation(Label):
             :param file_path: the path of the input file
             :return:
             """
-            logger.info(f"Uploading JSONL file containing requests...")
+            asy_logger.info(f"Uploading JSONL file containing requests...")
             file_object = await client.files.create(file=Path(file_path), purpose="batch")
-            logger.info(f"Uploading success! Got file ID: {file_object.id}\n")
+            asy_logger.info(f"Uploading success! Got file ID: {file_object.id}\n")
             return file_object.id
 
         async def create_batch_job(input_file_id):
@@ -746,13 +771,13 @@ class Annotation(Label):
             :param input_file_id: the ID of the input file
             :return:
             """
-            logger.info(f"Creating Batch Task based on file ID...")
+            asy_logger.info(f"Creating Batch Task based on file ID...")
             # if using Embedding model, set 'endpoint' with '/v1/embeddings'
             batch_job = await client.batches.create(
                 input_file_id=input_file_id,
                 endpoint="/v1/chat/ds-test",  # /v1/chat/completions
                 completion_window="24h")
-            logger.info(f"Creating a Batch Task success! Got Batch Task ID: {batch_job.id}\n")
+            asy_logger.info(f"Creating a Batch Task success! Got Batch Task ID: {batch_job.id}\n")
             return batch_job.id
 
         async def check_job_status(batch_id):
@@ -761,10 +786,10 @@ class Annotation(Label):
             :param batch_id: the ID of the batch task
             :return:
             """
-            logger.info(f"Checking the job status of the Batch Task (id {batch_id})...")
+            asy_logger.info(f"Checking the job status of the Batch Task (id {batch_id})...")
             async with semaphore:
                 batch = await client.batches.retrieve(batch_id=batch_id)
-            logger.info(f"Batch Task status: {batch.status}\n")
+            asy_logger.info(f"Batch Task status: {batch.status}\n")
             return batch.status
 
         async def get_output_id(batch_id):
@@ -773,10 +798,10 @@ class Annotation(Label):
             :param batch_id: the ID of the batch task
             :return:
             """
-            logger.info(f"Getting output file ID of the successful execution request in the Batch Task (id {batch_id})...")
+            asy_logger.info(f"Getting output file ID of the successful execution request in the Batch Task (id {batch_id})...")
             async with semaphore:
                 batch = await client.batches.retrieve(batch_id=batch_id)
-            logger.info(f"Output file ID: {batch.output_file_id}\n")
+            asy_logger.info(f"Output file ID: {batch.output_file_id}\n")
             return batch.output_file_id
 
         async def get_error_id(batch_id):
@@ -785,10 +810,10 @@ class Annotation(Label):
             :param batch_id: the ID of the batch task
             :return:
             """
-            logger.info(f"Getting output file ID for executing error requests in the Batch task (id {batch_id})...")
+            asy_logger.info(f"Getting output file ID for executing error requests in the Batch task (id {batch_id})...")
             async with semaphore:
                 batch = await client.batches.retrieve(batch_id=batch_id)
-            logger.info(f"Errot file ID: {batch.error_file_id}\n")
+            asy_logger.info(f"Errot file ID: {batch.error_file_id}\n")
             return batch.error_file_id
 
         async def download_results(output_file_id, output_file_path):
@@ -798,13 +823,13 @@ class Annotation(Label):
             :param output_file_path: the local path of the output file to save output
             :return:
             """
-            logger.info(f"downloading successful results of the batch task...")
+            asy_logger.info(f"downloading successful results of the batch task...")
             content = await client.files.content(output_file_id)
             # print part of the content for testing
-            logger.info(f"Print the first 1000 characters of the successful request result: {content.text[:1000]}...\n")
+            asy_logger.info(f"Print the first 1000 characters of the successful request result: {content.text[:1000]}...\n")
             # save results to local
             content.write_to_file(output_file_path)
-            logger.info(f"save successful results to {output_file_path}\n")
+            asy_logger.info(f"save successful results to {output_file_path}\n")
 
         async def download_errors(error_file_id, error_file_path):
             """
@@ -813,13 +838,13 @@ class Annotation(Label):
             :param error_file_path: the local path of the error file to save error
             :return:
             """
-            logger.info(f"downloading unsuccessful results of the batch task...")
+            asy_logger.info(f"downloading unsuccessful results of the batch task...")
             content = await client.files.content(error_file_id)
             # print part of the content for testing
-            logger.info(f"Print the first 1000 characters of the unsuccessful request result: {content.text[:1000]}...\n")
+            asy_logger.info(f"Print the first 1000 characters of the unsuccessful request result: {content.text[:1000]}...\n")
             # save error content  to local
             content.write_to_file(error_file_path)
-            logger.info(f"save error results to {error_file_path}\n")
+            asy_logger.info(f"save error results to {error_file_path}\n")
 
         def extract_outputs(output_file):
             """
@@ -845,7 +870,7 @@ class Annotation(Label):
 
         # 2. init input file, a jsonline file
         if not os.path.exists(input_file):
-            logger.info(f"Input file doesn't exist. Init input file {input_file}...")
+            asy_logger.info(f"Input file doesn't exist. Init input file {input_file}...")
             with concurrent.futures.ThreadPoolExecutor() as pool:  # use ThreadPoolExecutor to run the function in a separate thread
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(
@@ -855,7 +880,7 @@ class Annotation(Label):
                     all_chat_message_info,
                 )
         if os.path.exists(output_file):  # if the output file exists, read it and return
-            logger.info(f"Output file exist! Read cache from: {output_file}...")
+            asy_logger.info(f"Output file exist! Read cache from: {output_file}...")
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 loop = asyncio.get_running_loop()
                 outputs = await loop.run_in_executor(
@@ -873,13 +898,13 @@ class Annotation(Label):
             status = ""
             while status not in ["completed", "failed", "expired", "cancelled"]:
                 status = await check_job_status(batch_id)
-                logger.info(f"waiting fot the batch task (id {batch_id}) complete...")
+                asy_logger.info(f"waiting fot the batch task (id {batch_id}) complete...")
                 await asyncio.sleep(10)  # 等待10秒后再次查询状态
             # 如果任务失败,则打印错误信息并退出
             if status == "failed":
                 batch = await client.batches.retrieve(batch_id)
-                logger.error(f"Batch task fail. Error message:{batch.errors}\n")
-                logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+                asy_logger.error(f"Batch task fail. Error message:{batch.errors}\n")
+                asy_logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
                 return
             # Step 4: 下载结果：如果输出文件ID不为空,则打印请求成功结果的前1000个字符内容，并下载完整的请求成功结果到本地输出文件;
             # 如果错误文件ID不为空,则打印请求失败信息的前1000个字符内容,并下载完整的请求失败信息到本地错误文件.
@@ -889,15 +914,15 @@ class Annotation(Label):
             error_file_id = await get_error_id(batch_id)
             if error_file_id:
                 await download_errors(error_file_id, error_file)
-                logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+                asy_logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
-            logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
+            asy_logger.error(f"An error occurred: {e}")
+            asy_logger.error(f"refer to error code: https://help.aliyun.com/zh/model-studio/developer-reference/error-code")
 
         # Step 5: 读取输出文件,提取输出结果
         with concurrent.futures.ThreadPoolExecutor() as pool:
             loop = asyncio.get_running_loop()
-            logger.info(f"Extracting outputs from {output_file}...")
+            asy_logger.info(f"Extracting outputs from {output_file}...")
             outputs = await loop.run_in_executor(
                 pool,
                 extract_outputs,
@@ -911,16 +936,12 @@ class Annotation(Label):
         :param dataset: the dataset to be annotated
         :param anno_cfg: the configuration of the annotation settings
         :param kwargs: other arguments, including
-            2) dataset_name, the name of the dataset
-            3) eval, whether to evaluate the annotation quality for each annotator
-            4) cache, whether to cache the annotation results
-            5) prompt_type, the type of the prompt, including single_type, mt_fs, and so on
-            6) sampling_strategy, the strategy to sample the test subset
-            7) dialogue_style, the style of the dialogue 'batch_qa' or 'multi_qa'
-            8) ignore_sent, whether to ignore the sentence in the chat message. If True, the sentence will be shown as '***'.
-            9) label_mention_map_portion, the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
-            10) seed, the random seed
-            11) start_row, the start row in the worksheet to continue to add metrics. If < 0, we don't write metrics to excel file.
+            1) dataset_name, the name of the dataset
+            2) eval, whether to evaluate the annotation quality for each annotator
+            3) cache, whether to cache the annotation results
+            4) prompt_type, the type of the prompt, including single_type, mt_fs, and so on
+            5) seed, the random seed
+            6) concurrency_level: the concurrency level of the annotator
         :return:
         """
 
@@ -947,10 +968,10 @@ class Annotation(Label):
             prompt_type_dir = kwargs['prompt_type']
 
         # 0.1.3 test subset sampling strategy dir
-        sub_samp_dir = '{}_sampling'.format(kwargs['sampling_strategy'])
+        sub_samp_dir = '{}_sampling'.format(anno_cfg['sampling_strategy'])
 
         # 0.1.4 dialogue style dir
-        dialogue_style_dir = '{}'.format(kwargs['dialogue_style'])
+        dialogue_style_dir = '{}'.format(anno_cfg['dialogue_style'])
 
         # 0.1.5 annotator name
         if self.annotator.use_api:
@@ -960,24 +981,26 @@ class Annotation(Label):
         annotator_name =  model_name + '-' + anno_cfg['name']
 
         if anno_cfg['k_shot'] > 0:  # the 'ignore_sent' and 'label_mention_map_portion' is accessible when we use few-shot setting
-            if kwargs['ignore_sent']:
+            if anno_cfg['ignore_sent']:
                 annotator_name += '-is'
-            if kwargs['label_mention_map_portion'] < 1:
-                annotator_name += '-lmp_{}'.format(kwargs['label_mention_map_portion'])
+            if anno_cfg['label_mention_map_portion'] < 1:
+                annotator_name += '-lmp_{}'.format(anno_cfg['label_mention_map_portion'])
         if kwargs['seed']:
             annotator_name += '-{}'.format(kwargs['seed'])
+        anno_cfg['annotator_name'] = annotator_name
 
         # task dir for this annotation
         task_dir = os.path.join(label_format_dir, prompt_type_dir, label_des_dir, sub_samp_dir, dialogue_style_dir, model_name)
+        anno_cfg['task_dir'] = task_dir
         res_cache_dir = os.path.join(cache_dir, task_dir, annotator_name)
-        logger.info(f'result cache dir: {res_cache_dir}')
+        asy_logger.info(f'result cache dir: {res_cache_dir}')
 
         try:
-            logger.info(f'Trying to load cache file from {res_cache_dir}')
+            asy_logger.info(f'Trying to load cache file from {res_cache_dir}')
             cache_result = load_from_disk(res_cache_dir)
             annotate_flag = False
         except FileNotFoundError:
-            logger.info(f'No cache file found in {res_cache_dir}')
+            asy_logger.info(f'No cache file found in {res_cache_dir}')
             if not os.path.exists(res_cache_dir):
                 os.makedirs(res_cache_dir)
 
@@ -1000,6 +1023,9 @@ class Annotation(Label):
 
         # annotation process
         if annotate_flag:
+            # 0. init anno model
+            self.annotator.init_anno_model()
+
             # 1. Init the chat messages
             init_chat_template_methods = {
                 'single_type': self._st_fs_msg,
@@ -1013,7 +1039,9 @@ class Annotation(Label):
                     annotator_cfg=self.annotator.annotator_cfg,
                     anno_cfg=anno_cfg,
                     use_api=self.annotator.use_api,
-                    **kwargs
+                    dialogue_style=anno_cfg['dialogue_style'],
+                    ignore_sent=anno_cfg['ignore_sent'],
+                    label_mention_map_portion=anno_cfg['label_mention_map_portion']
                 )
 
             # 2. batch process
@@ -1032,7 +1060,7 @@ class Annotation(Label):
                 anno_cfg=anno_cfg,
                 chat_msg_template=chat_msg_template,
                 anno_style=anno_style,
-                dialogue_style=kwargs['dialogue_style']
+                dialogue_style=anno_cfg['dialogue_style']
             )  # an element of all_chat_message_info is a tuple like (instance_id, chat_message, sentence, query)
 
             # 2.2 init the result
@@ -1053,9 +1081,13 @@ class Annotation(Label):
 
             # 2.3 use batch inference with api.
             # Prioritize judging and executing this code segment
-            semaphore = asyncio.Semaphore(self.annotator.api_cfg['concurrency_level'])  # limit the number of concurrent requests
+            if self.annotator.use_api:
+                concurrency_level = self.annotator.api_cfg['concurrency_level']
+            else:
+                concurrency_level = kwargs['concurrency_level']
+            semaphore = asyncio.Semaphore(concurrency_level)  # limit the number of concurrent requests
             if self.annotator.use_api and self.annotator.batch_infer:
-                logger.info('using batch inference with api to annotate...')
+                asy_logger.info('using batch inference with api to annotate...')
                 # use batch inference
                 # 2.3.1 get the response of the annotator
                 outputs = await self.get_batch_response(
@@ -1078,7 +1110,7 @@ class Annotation(Label):
             if not self.annotator.batch_infer and kwargs.get('dialogue_style') == 'batch_qa':
                 if self.annotator.use_api:
                     # use LLM API and batch_qa
-                    logger.info('using api with batch_qa to annotate...')
+                    asy_logger.info('using api with batch_qa to annotate...')
                     tasks = []  # store the tasks for each instance
                     for chat in all_chat_messagges:
                         tasks.append(
@@ -1111,8 +1143,8 @@ class Annotation(Label):
                         end_time = time.time()
                         exce_time = end_time - start_time
                         execution_time_all.append(exce_time)
-                        logger.info(f'execution time for a batch: {exce_time} s')
-                        logger.info(f'execution time for a instance: {exce_time / len(batch_outputs)} s')
+                        asy_logger.info(f'execution time for a batch: {exce_time} s')
+                        asy_logger.info(f'execution time for a instance: {exce_time / len(batch_outputs)} s')
 
                         # for test
                         # test_answer = []
@@ -1121,15 +1153,15 @@ class Annotation(Label):
                         prompt_lens = [len(e.prompt_token_ids) for e in batch_outputs]
                         prompt_lens_all += prompt_lens
 
-                        logger.info(f'prompt average length: {sum(prompt_lens) // len(prompt_lens)} tokens')
+                        asy_logger.info(f'prompt average length: {sum(prompt_lens) // len(prompt_lens)} tokens')
 
                         output_lens = [len(e.outputs[0].token_ids) for e in batch_outputs]
-                        logger.info(f'output average length: {sum(output_lens) // len(output_lens)} tokens')
+                        asy_logger.info(f'output average length: {sum(output_lens) // len(output_lens)} tokens')
 
                         batch_outputs = [e.outputs[0].text for e in batch_outputs]
                         query_count += len(batch_outputs)
                         outputs += batch_outputs
-            elif not self.annotator.batch_infer and kwargs['dialogue_style'] == 'multi_qa':
+            elif not self.annotator.batch_infer and anno_cfg['dialogue_style'] == 'multi_qa':
                 for batch in tqdm(
                     fu.batched(zip(all_instance_ids, all_chat_messagges, all_sententes, all_queries), batch_size),
                     desc=f'annotating by {annotator_name}, dataset {dataset_name}'
@@ -1164,10 +1196,10 @@ class Annotation(Label):
                             )  # len(tmp_outputs) == 1
 
                             prompt_lens = [len(e.prompt_token_ids) for e in tmp_outputs]
-                            logger.info(f'prompt average length: {sum(prompt_lens) // len(prompt_lens)} tokens')
+                            asy_logger.info(f'prompt average length: {sum(prompt_lens) // len(prompt_lens)} tokens')
 
                             output_lens = [len(e.outputs[0].token_ids) for e in tmp_outputs]
-                            logger.info(f'output average length: {sum(output_lens) // len(output_lens)} tokens')
+                            asy_logger.info(f'output average length: {sum(output_lens) // len(output_lens)} tokens')
 
                             output_texts = [e.outputs[0].text for e in tmp_outputs]  # len(output_texts) == 1
                             output_text = output_texts[0]
@@ -1217,7 +1249,7 @@ class Annotation(Label):
                         # if multi_qa, we have processed the output immediately after getting the response in 2.4
                         # so we just skip the processing here
                         # only 'batch_qa' need to process the output here
-                        if kwargs['dialogue_style'] == 'multi_qa':
+                        if anno_cfg['dialogue_style'] == 'multi_qa':
                             continue
 
                         # the method of processing output of cand_mention_prompt and 'subset_type_prompt' are same to that of 'multi_type_prompt'
@@ -1258,10 +1290,10 @@ class Annotation(Label):
                 }
 
             cache_result = Dataset.from_dict(cache_result)
-            logger.info(f'Save cache result to {res_cache_dir}')
+            asy_logger.info(f'Save cache result to {res_cache_dir}')
 
             efficiency_paras = None
-            if kwargs['dialogue_style'] == 'batch_qa' and not self.annotator.use_api:
+            if anno_cfg['dialogue_style'] == 'batch_qa' and not self.annotator.use_api:
                 prompt_avg_len = sum(prompt_lens_all) // query_count
                 avg_time_per_batch = sum(execution_time_all) / len(execution_time_all)
                 avg_time_per_ins = sum(execution_time_all) / query_count
@@ -1269,36 +1301,35 @@ class Annotation(Label):
                                     'avg_time_per_batch': avg_time_per_batch,
                                     'avg_time_per_ins': avg_time_per_ins
                                     }
-                logger.info(f'prompt average length: {prompt_avg_len} tokens')
-                logger.info(f'average execution time for a batch: {avg_time_per_batch} s')
-                logger.info(f'average execution time for a instance: {avg_time_per_ins} s')
+                asy_logger.info(f'prompt average length: {prompt_avg_len} tokens')
+                asy_logger.info(f'average execution time for a batch: {avg_time_per_batch} s')
+                asy_logger.info(f'average execution time for a instance: {avg_time_per_ins} s')
 
             if kwargs['cache']:
                 cache_result.save_to_disk(res_cache_dir)
 
         # 4. evaluation
+        res_file = None
         if kwargs['eval']:
             # important! we must remove the '0'('O' label) span from the pred_spans before evaluation
             pred_spans = [span for span in cache_result['pred_spans'][0] if int(span[-1]) != self.label2id['O']]
-            self.evaluate(cache_result['y_true'][0], pred_spans,
-                          anno_cfg=anno_cfg,
-                          dataset=dataset,
-                          dataset_name=dataset_name,
-                          annotator_name=annotator_name,
-                          task_dir=task_dir,
-                          anno_style=anno_style,
-                          prompt_type=kwargs['prompt_type'],
-                          efficiency_paras=efficiency_paras)
-            start_row = kwargs['start_row']
-            if kwargs['start_row'] > 0:
-                start_row = self.write_metrics_to_excel(anno_cfg=anno_cfg,
-                                                        start_row=start_row,
-                                                        task_dir=task_dir,
-                                                        dataset_name=dataset_name,
-                                                        annotator_name=annotator_name,
-                                                        label_mention_map_portion=kwargs['label_mention_map_portion'])
+            res_file = self.evaluate(
+                cache_result['y_true'][0],
+                pred_spans,
+                anno_cfg=anno_cfg,
+                dataset=dataset,
+                dataset_name=dataset_name,
+                annotator_name=annotator_name,
+                task_dir=task_dir,
+                anno_style=anno_style,
+                prompt_type=kwargs['prompt_type'],
+                efficiency_paras=efficiency_paras
+            )
 
-        return  start_row
+        # annotator_name is the name of the annotator
+        # task_dir is the directory of the task
+        # return both of them to get the res_file
+        return res_file, anno_cfg
 
     def evaluate(self, y_true, y_pred, anno_cfg, **kwargs):
         """
@@ -1343,7 +1374,7 @@ class Annotation(Label):
             with open(eff_file, 'w') as f:
                 for metric, res in kwargs['efficiency_paras'].items():
                     f.write(f'{metric}: {res}\n')
-        return
+        return res_file
 
     def get_label_measure(self, test_dataset, anno_cfg, dataset_name, prompt_type='sc_fs', beta=1):
         """
@@ -1416,63 +1447,3 @@ class Annotation(Label):
             lc = fu.compute_label_coverage(outputs, gold_outputs)  # label coverage
             lm_beta = (1 + beta ** 2) * lspi * lc / (beta ** 2 * lspi + lc)
             return lspi, lc, lm_beta
-
-    def write_metrics_to_excel(self, anno_cfg, **kwargs):
-        """
-        write metrics to excel files
-        :param kwargs: other arguments, including
-            1) start_row: the row index we start. If the worksheet is new, start_row is 2. elif start_row > 2, it's the last row we add data.
-            2) dataset_name,  the name of the dataset.
-            3) annotator_name,  the name of the annotator LLM.
-            4) task_dir, the directory of the task
-            5) label_mention_map_portion, specify the portion of the label mention mapping
-        :return:
-        """
-        start_row = kwargs['start_row']
-        eval_dir = anno_cfg['eval_dir'].format(dataset_name=kwargs['dataset_name'])
-        res_cache_dir = os.path.join(eval_dir, kwargs['task_dir'])
-        if not os.path.exists(res_cache_dir):
-            os.makedirs(res_cache_dir)
-        res_file = os.path.join(res_cache_dir, '{}_res.txt'.format(kwargs['annotator_name']))
-        logger.info(f'write metrics ({res_file}) to excel')
-        with open(res_file, 'r') as f:
-            eval_results = f.readlines()
-
-        metric_num = len(eval_results)  # the number of metrics
-        if start_row == 2:  # it's a new worksheet
-            self.worksheet.write(0, 0, 'label_mention_map_portion')
-            self.worksheet.write(0, 1, 'rep_num')
-            self.worksheet.write(0, 2, '5-shot')
-            self.worksheet.write(0, metric_num + 4, '1-shot')
-            if anno_cfg['k_shot'] == 5:  # 5-shot
-                head_row, head_col = 1, 3  # headers start from (1, 3)
-                data_row, data_col = 2, 3  # datas start from (2, 3)
-            else:  # 1-shot
-                head_row, head_col = 1, metric_num + 4  # headers start from (1, metric_num + 4)
-                data_row, data_col = 2, metric_num + 4  # datas start from (2, metric_num + 4)
-        elif start_row > 2:  # we continue to write data to the older worksheet
-            if anno_cfg['k_shot'] == 5:  # 5-shot
-                head_row, head_col = 1, 3  # headers start from (1, 3)
-                data_row, data_col = start_row, 3  # datas start from (start_row, 3)
-            else:  # 1-shot
-                head_row, head_col = 1, metric_num + 4  # headers start from (1, metric_num + 4)
-                data_row, data_col = start_row, metric_num + 4  # datas start from (start_row, metric_num + 4)
-
-        if 'repeat_num' in anno_cfg.keys():
-            rep_num = anno_cfg['repeat_num']
-        elif 'demo_times':
-            rep_num = anno_cfg['demo_times']
-        self.worksheet.write(data_row, 0, kwargs['label_mention_map_portion'])
-        self.worksheet.write(data_row, 1, rep_num)
-        self.worksheet.write(data_row, 2, kwargs['annotator_name'])
-        for line in eval_results:
-            line = line.strip()
-            line = line.split(' ')
-            metric, res = line[0], float(line[1])
-            if start_row == 2:  # header
-                self.worksheet.write(head_row, head_col, metric)
-                head_col += 1
-            self.worksheet.write(data_row, data_col, res)
-            data_col += 1
-        data_row += 1
-        return  data_row

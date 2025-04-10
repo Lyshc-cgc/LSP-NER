@@ -17,7 +17,6 @@ Qwen1.5:
   tensor_parallel_size: 2
   enable_chunked_prefill: False  # https://github.com/vllm-project/vllm/issues/6723, set explicitly enable_chunked_prefill to False For Volta GPU
 
-
 Mistral:
  name: Mistral
  chat: False
