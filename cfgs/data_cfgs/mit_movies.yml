@@ -2,8 +2,12 @@
 
 dataset_name: mit_movies
 data_path: data/{dataset_name}/mit_movies
+# the name of the configuration to be loaded,
+# see https://huggingface.co/docs/datasets/package_reference/loading_methods#datasets.load_dataset.name
+cfg_name: ~
 num_proc: 4
 nested: False  # whether the entities are nested
+language: en  # language
 
 # process config
 tokens_field: tokens  # the field name of the tokens, please make sure the field name is consistent with the data

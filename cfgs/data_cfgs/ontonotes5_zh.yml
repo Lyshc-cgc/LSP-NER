@@ -1,12 +1,18 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-dataset_name: ontonotes5
-data_path: data/{dataset_name}/ontonotes5.py
+dataset_name: ontonotes5_zh
+data_path: data/{dataset_name}/ontonotes5_zh.py
+
+# the name of the configuration to be loaded,
+# see https://huggingface.co/docs/datasets/package_reference/loading_methods#datasets.load_dataset.name
+cfg_name: 'chinese_v4'
+
 num_proc: 4
 nested: False  # whether the entities are nested
+language: zh  # language
 
 # process config
-tokens_field: tokens  # the field name of the tokens, please make sure the field name is consistent with the data
-ner_tags_field: tags  # the field name of the NER tag, please make sure the field name is consistent with the data
+tokens_field: words  # the field name of the tokens, please make sure the field name is consistent with the data
+ner_tags_field: named_entities  # the field name of the NER tag, please make sure the field name is consistent with the data
 batch_size: 4096 # batch size for data processing
 split: test  # train, dev, test
 shuffle: True  # whether to shuffle the data

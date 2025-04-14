@@ -7,12 +7,17 @@ import multiprocessing
 import module.func_util as fu
 from module import Annotation, Processor, Annotator
 
-dataset_names = ['ontonotes5', 'mit_movies']  # 'conll2003', 'ontonotes5', 'mit_restaurant', 'mit_movies'
+# 'ontonotes5_zh'
+# 'conll2003',
+# 'ontonotes5_en',
+# 'mit_restaurant',
+# 'mit_movies'
+dataset_names = ['ontonotes5_zh']
 use_api = False
 api_model = 'deepseek'  # 'qwen', 'deepseek', 'glm', 'gpt'
-local_model = 'Mistral'  # 'Qwen1.5', 'Mistral'
-seeds = [22, 32, 42]
-test_subset_size = 200
+local_model = 'Qwen2.5'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
+seeds = [22]
+test_subset_size = 20
 concurrency_level = 10  # number of concurrent requests
 
 asy_logger = fu.get_asy_logger('run_script')
@@ -27,7 +32,7 @@ async def main():
     api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
 
     # local annotator
-    assert local_model in ('Qwen1.5', 'Mistral')  # add more
+    assert local_model in ('Qwen1.5', 'Mistral', 'Qwen2.5')  # add more
     annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
 
     # init annotator
@@ -44,6 +49,7 @@ async def main():
         labels_cfg = fu.get_config(config['label_cfgs'][dataset_name])  # label config
         proc = Processor(data_cfg, labels_cfg, natural_form)
         dataset = proc.process()
+        language = data_cfg['language']  # language of the dataset
 
         # 3. annotate the data by LLMs
         # 3.1 test subset sampling settings
@@ -57,13 +63,13 @@ async def main():
         # 3.2 dialogue style settings
         # 'multi-qa' for multi-turn QA, we concatenate the output of the previous turn with the input of the current turn.
         # 'batch-qa' for batch QA, we use new context for each query.
-        dialogue_style = 'multi_qa'
+        dialogue_style = 'batch_qa'
         assert dialogue_style in ('multi_qa', 'batch_qa')
 
         # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
-        for prompt_type in ['mt_fs']: # 'mt_fs', 'st_fs', 'sc_fs',
-            assert prompt_type in ('mt_fs', 'st_fs', 'sb_fs', 'sc_fs')
+        for prompt_type in ['sc_fs', 'st_fs', 'mt_fs']: # 'mt_fs', 'st_fs', 'sc_fs',
+            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs')
 
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
                 logger.error('multi_qa style only support mt_fs')
@@ -95,6 +101,7 @@ async def main():
                     for rep_num in range(repeat_num):
                         for anno_cfg in anno_cfgs:
                             logger.info(f'dataset: {dataset_name}')
+                            logger.info(f'language: {language}')
                             logger.info(f'use api: {use_api}')
                             logger.info(f'api model: {api_model}')
                             logger.info(f'local model: {local_model}')
@@ -114,6 +121,7 @@ async def main():
                                 anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
                             else:
                                 anno_cfg['demo_times'] = demo_times
+                            anno_cfg['language'] = language
                             anno_cfg['repeat_num'] = rep_num + 1  # for sc_fs
                             anno_cfg['subset_size'] = subset_size
                             anno_cfg['prompt_template'] = fu.get_config(anno_cfg['prompt_template_dir'])

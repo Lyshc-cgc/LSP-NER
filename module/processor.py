@@ -26,50 +26,76 @@ class Processor(Label):
         self.config = data_cfg
         self.natural_flag = 'natural' if natural_form else 'bio'  # use natural-form or bio-form
 
-    def _get_span_and_tags(self, tokens, tags):
+    def _get_span_and_tags(self, tokens, tags, language='en'):
         """
         Get the span and span tags of the sentence, given the tokens and token tags.
         :param tokens: tokens of the sentence
         :param tags: tags for each token
+        :param language: the language of the tokens.
         :return:
         """
+        assert language in ('en', 'zh')
         instance_spans = []  # store spans for each instance
         instance_spans_labels = []  # store labels for each span of each instance
         idx = 0
         span = []  # store tokens in a span
         pre_tag = 0  # the previous tag
-        start, end = 0, 0  # the start/end index for a span
 
+        # the start/end index for a span
+        # if language is English, the start/end index is the token index
+        # if language is Chinese, the start/end index is the character index
+        start, end = 0, 0
+        characters_length = 0  # the length of the characters that we have processed
+        join_character = ' ' if self.config['language'] == 'en' else ''
+        span_tag = None
         while idx < len(tokens):
             tag = tags[idx]
             if tag != 0:
                 if pre_tag != 0 and self.covert_tag2id[tag] == self.covert_tag2id[pre_tag]:  # the token is in the same span
                     # append the token into the same span
                     span.append(tokens[idx])
-                    end = idx + 1  # exclusive
+                    span_tag = self.covert_tag2id[tag]
+                    if language == 'en':
+                        end = idx + 1  # exclusive
+                    else:
+                        # for Chinese, we need to consider the characters length
+                        end = characters_length + len(tokens[idx])  # exclusive
+
                 else:  # the previous is a 'O' token or previous token is not in the same span
                     # store the previous span
                     if len(span) > 0:
-                        instance_spans.append((str(start), str(end), ' '.join(span)))
-                        span_tag = tags[start]  # the label of the span, we use the label of the first token in the span
-                        instance_spans_labels.append(self.covert_tag2id[span_tag])
+                        instance_spans.append((str(start), str(end), join_character.join(span)))
+                        instance_spans_labels.append(span_tag)
                     # init a new span
                     span.clear()
                     span.append(tokens[idx])
-                    start = idx
-                    end = idx + 1  # exclusive
+                    span_tag = self.covert_tag2id[tag]
+                    if language == 'en':
+                        start = idx
+                        end = idx + 1  # exclusive
+                    else:
+                        # for Chinese, we need to consider the characters length
+                        start = characters_length
+                        end = characters_length + len(tokens[idx])  # exclusive
+
             pre_tag = tag
+            characters_length += len(tokens[idx])
             idx += 1
+
         # store the last span
         if len(span) > 0:
-            instance_spans.append((str(start), str(end), ' '.join(span)))
-            instance_spans_labels.append(self.covert_tag2id[tags[start]])
+            instance_spans.append((str(start), str(end), join_character.join(span)))
+            if span_tag is None:
+                print('span tag None')
+            instance_spans_labels.append(span_tag)
         return instance_spans, instance_spans_labels
 
     def data_format_span(self, instances):
         """
-        Get the span from gold annotated spans.
-        :param instances: Dict[str, List], A batch of instances.
+        Get the span from gold annotated instances. an instance is corresponding to a sentence
+
+        :param instances: Dict[str, List], A batch of instances. an instance is a dict with keys 'tokens', 'ner_tags',
+        'starts', 'ends'
         :return:
         """
 
@@ -81,39 +107,36 @@ class Processor(Label):
         # main process
         tokens_filed, ner_tags_field = self.config['tokens_field'], self.config['ner_tags_field']
         all_raw_tokens, all_raw_tags = instances[tokens_filed], instances[ner_tags_field]
-        # 1. Some preparations
 
-        # 1.2. covert tokens to sentence
-        sents = [' '.join(raw_tokens) for raw_tokens in all_raw_tokens]
-
-        # 1.3. get batch for different settings
         if not self.config['nested']:  # flat ner
-            pbar = zip(sents, all_raw_tokens, all_raw_tags)
+            pbar = zip(all_raw_tokens, all_raw_tags)
         else:  # nested
             start_position, end_position = instances['starts'], instances['ends']
-            pbar = zip(sents, all_raw_tokens, start_position, end_position, all_raw_tags)
+            pbar = zip(all_raw_tokens, start_position, end_position, all_raw_tags)
         for instance in pbar:
             if not self.config['nested']:  # flat NER
-                sent, raw_tokens, raw_tags = instance
-
+                raw_tokens, raw_tags = instance
+                if len(raw_tokens) != len(raw_tags):
+                    # for those flat datasets, we need to filter out those instances with different length of tokens and tags
+                    continue
                 # 2.1.2 get gold spans and its labels
-                gold_spans, gold_spans_tags = self._get_span_and_tags(raw_tokens, raw_tags)
+                gold_spans, gold_spans_tags = self._get_span_and_tags(raw_tokens, raw_tags, self.config['language'])
 
                 # element in gold_spans is in the shape of (str(start), str(end) (excluded), span)
                 # element in gold_spans_tags is tag id
-                # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, gold_label_id)...]
+                # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, span_label_id)...]
 
                 res_tokens.append(raw_tokens)
                 res_tags.append(raw_tags)
                 res_spans_labels.append([(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)])
             else:  # nested NER
-                sent, raw_tokens, starts, ends, raw_tags = instance
+                raw_tokens, starts, ends, raw_tags = instance
                 # 2.1.1 (optional) get the tag directly from the raw dataset
                 gold_spans = []  # store gold spans for this instance
                 for start, end, label_id in zip(starts, ends, raw_tags):
                     # end position is excluded
                     gold_spans.append((str(start), str(end), ' '.join(raw_tokens[start: end]), str(label_id)))
-                # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, gold_label_id)...]
+                # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, span_label_id)...]
                 res_spans_labels.append(gold_spans)
                 res_tokens.append(raw_tokens)
                 res_tags.append([])
@@ -122,6 +145,47 @@ class Processor(Label):
             'tokens': res_tokens,
             'tags': res_tags,
             'spans_labels': res_spans_labels,  # store the gold spans and labels of the instances, shape like (start, end (excluded), gold_mention_span, gold_label_id)
+        }
+
+    def data_format_span_from_docs(self, documents):
+        """
+        Get the span from gold annotated documents. We should convert each sentence of a document to a single instance.
+
+        :param documents: Dict[str, List], A batch of documents.
+        :return:
+        """
+
+        # init the result
+        res_tokens = []  # store the tokens of the instances
+        res_tags = []  # store the tags of the instances
+        res_spans_labels = []  # store the gold spans and labels of the instances
+
+        # main process
+        tokens_filed, ner_tags_field = self.config['tokens_field'], self.config['ner_tags_field']
+        for doc in documents['sentences']:
+            for instance in doc:
+                raw_tokens, raw_tags = instance[tokens_filed], instance[ner_tags_field]
+                # flat NER
+                if len(raw_tokens) != len(raw_tags):
+                    # for those flat datasets, we need to filter out those instances with different length of tokens and tags
+                    continue
+
+                # get gold spans and its labels
+                gold_spans, gold_spans_tags = self._get_span_and_tags(raw_tokens, raw_tags, self.config['language'])
+
+                # element in gold_spans is in the shape of (str(start), str(end) (excluded), span)
+                # element in gold_spans_tags is tag id
+                # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, span_label_id)...]
+
+                res_tokens.append(raw_tokens)
+                res_tags.append(raw_tags)
+                res_spans_labels.append([(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)])
+
+        return {
+            'tokens': res_tokens,
+            'tags': res_tags,
+            'spans_labels': res_spans_labels,
+            # store the gold spans and labels of the instances, shape like (start, end (excluded), gold_mention_span, span_label_id)
         }
 
     def statistics(self, dataset, include_none=False):
@@ -205,13 +269,10 @@ class Processor(Label):
         label_nums = dict(sorted(label_nums.items(), key=lambda x: x[1], reverse=False))  # sort the labels by the number of entities by ascending order
 
         # add new_tags column
-        # original tags is BIO schema, we convert it to the new tags schema where the 'O' tag is 0, 'B-DATE' and 'I-DATE' are the same tag, etc.
-        ner_tags_field = self.config['ner_tags_field']
-        if not self.config['nested']:  # flat NER
-            dataset = dataset.map(lambda example: {"new_tags": [self.covert_tag2id[tag] for tag in example[ner_tags_field]]})
-        else:  # nested NER
-            dataset = dataset.map(lambda example: {"new_tags": [tag for tag in example[ner_tags_field]]})
-
+        # we extract span tags for each instance
+        # an elements' shape of example['spans_labels'] is
+        # [(str(start), str(end) (excluded), str(gold_mention_span), str(span_label_id)...]
+        dataset = dataset.map(lambda example: {"span_tags": [int(e[-1]) for e in example['spans_labels']]})
         support_set = set()  # the support set
         counter = {label: 0 for label in label_nums.keys()}  # counter to record the number of entities for each label in the support set
 
@@ -219,22 +280,19 @@ class Processor(Label):
         candidate_idx = dict()
 
         for label in label_nums.keys():
-            # for 'O' label, we choose those instance containing spans parsed by parsers without any golden entity spans,
-            # i.e., len(dataset[idx]['spans']) > 0 and len(dataset[idx]['spans_labels']) <= 0
-            # tmp_ins = dataset.filter(lambda x: len(x['spans']) > 0 >= len(x['spans_labels']))['id']
 
             # filter out the instances without any golden entity spans
             label_id = self.label2id[label]
-            tmp_ins = dataset.filter(lambda x: label_id in x['new_tags'] and len(x['spans_labels']) > 0)['id']
+            tmp_ins = dataset.filter(lambda x: label_id in x['span_tags'] and len(x['spans_labels']) > 0)['id']
             candidate_idx.update({label: tmp_ins})
 
         # 2. sample
         logger.info(f"Sampling {k_shot}-shot support set from {sample_split} split...")
         for label in label_nums.keys():
+            logger.info(f'Sampling {label} support set...')
             while counter[label] < k_shot:
-                idx = random.choice(candidate_idx[label])
-                support_set.add(idx)
-                candidate_idx[label].remove(idx)
+                idxs = random.sample(candidate_idx[label], k=k_shot-counter[label])
+                support_set.update(idxs)
                 counter = _update_counter(support_set, counter)
                 logger.info(f'support set statistic: {counter}')
 
@@ -311,6 +369,9 @@ class Processor(Label):
 
         preprocessed_dir = os.path.join(self.config['preprocessed_dir'], f'span_{self.natural_flag}')
         process_func = self.data_format_span
+        if self.config['dataset_name'] == 'ontonotes5_zh':
+            process_func = self.data_format_span_from_docs
+
         # with_rank is used to determine whether to assign a value to the rank parameter in the map function
         continue_dir = os.path.join(self.config['continue_dir'], f'span_{self.natural_flag}')  # the directory to store the continued data to be annotated
         ss_cache_dir = os.path.join(self.config['ss_cache_dir'], f'span_{self.natural_flag}')  # the directory to cache the support set
@@ -324,16 +385,20 @@ class Processor(Label):
             logger.info('No cache found, start to preprocess the dataset...')
             data_path = self.config['data_path'].format(dataset_name=self.config['dataset_name'])
             # raw dataset
-            preprocessed_dataset = load_dataset(data_path, num_proc=self.config['num_proc'], trust_remote_code=True)
+            raw_dataset = load_dataset(
+                data_path,
+                name=self.config['cfg_name'],
+                num_proc=self.config['num_proc'],
+                trust_remote_code=True
+            )
 
-            tokens_filed, ner_tags_field = self.config['tokens_field'], self.config['ner_tags_field']
-            if not self.config['nested']:
-                # for those flat datasets, we need to filter out those instances with different length of tokens and tags
-                preprocessed_dataset = preprocessed_dataset.filter(lambda x: len(x[tokens_filed]) == len(x[ner_tags_field]) )
-            preprocessed_dataset = preprocessed_dataset.map(process_func,
-                                                            batched=True,
-                                                            batch_size=self.config['batch_size'],
-                                                            num_proc=self.config['num_proc'])
+            preprocessed_dataset = raw_dataset.map(
+                process_func,
+                batched=True,
+                batch_size=self.config['batch_size'],
+                num_proc=self.config['num_proc'],
+                remove_columns=raw_dataset['train'].column_names,
+            )
             # add index column
             preprocessed_dataset = preprocessed_dataset.map(lambda example, index: {"id": index}, with_indices=True)  # add index column
 

@@ -3,7 +3,8 @@
 
 # data process config
 data_cfgs:
-  ontonotes5: cfgs/data_cfgs/ontonotes5.yml
+  ontonotes5_en: cfgs/data_cfgs/ontonotes5_en.yml
+  ontonotes5_zh: cfgs/data_cfgs/ontonotes5_zh.yml
   conll2003: cfgs/data_cfgs/conll2003.yml
   mit_restaurant: cfgs/data_cfgs/mit_restaurant.yml
   mit_movies: cfgs/data_cfgs/mit_movies.yml
@@ -21,7 +22,7 @@ anno_cfgs:
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
 #    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
   sb_fs:  # subset type prompt, few-shot setting
-    - cfgs/subset_type/anno_cfg_sb_fs_0.yml
+#    - cfgs/subset_type/anno_cfg_sb_fs_0.yml
     - cfgs/subset_type/anno_cfg_sb_fs_1.yml
     - cfgs/subset_type/anno_cfg_sb_fs_5.yml
   sc_fs:  # subset candidate prompt, few-shot setting
@@ -33,7 +34,8 @@ api_cfg: cfgs/api.yml
 
 # label_cfgs config
 label_cfgs:
-  ontonotes5: cfgs/label_cfgs/ontonotes5.yml
+  ontonotes5_en: cfgs/label_cfgs/ontonotes5_en.yml
+  ontonotes5_zh: cfgs/label_cfgs/ontonotes5_zh.yml
   conll2003: cfgs/label_cfgs/conll2003.yml
   mit_restaurant: cfgs/label_cfgs/mit_restaurant.yml
   mit_movies: cfgs/label_cfgs/mit_movies.yml

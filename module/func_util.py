@@ -72,7 +72,7 @@ def get_logger(name, level=logging.INFO, filename='test.log'):
     console_handler.setLevel(level)
 
     # format
-    formatter = logging.Formatter('[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d ] -- %(message)s')
+    formatter = logging.Formatter('[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d ] %(message)s')
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
 
@@ -87,7 +87,7 @@ def get_config(cfg_file):
     :param cfg_file: str, the path to the configuration file. YAML format is used.
     :return: dict, the configuration.
     """
-    with open(cfg_file, 'r') as f:
+    with open(cfg_file, 'r', encoding='utf-8') as f:
         config = yaml.load(f, Loader=SafeLoader)
     return config
 
@@ -310,11 +310,12 @@ def compute_span_f1_by_labels(gold_spans, pred_spans, id2label, res_file):
     # cache the results
     df_metrics.to_csv(res_file, index=False)
 
-def find_span(text: str, span: str):
+def find_span(text: str, span: str, language: str = 'en'):
     """
     Find the span in the text.
     :param text: str, the text.
     :param span: str, the mention.
+    :param language: str, the language of the text. Default is 'en'.
     :return: list, the list of spans.
     """
     if not span:
@@ -322,23 +323,30 @@ def find_span(text: str, span: str):
     res_spans = []
     # Find the start character index and end character index of the first matched span.
     re_span = re.escape(str(span))  # escape special characters in the span
-    pattern_0 = r"\b(" + re_span + r")\b"  # match the whole span after escaping special characters
-    pattern_1 = r"\s(" + re_span + r")\s"  # match the span surrounded by spaces after escaping special characters
-    patterns = [pattern_0, pattern_1]
+    if language == 'en':
+        pattern_0 = r"\b(" + re_span + r")\b"  # match the whole span after escaping special characters
+        pattern_1 = r"\s(" + re_span + r")\s"  # match the span surrounded by spaces after escaping special characters
+        patterns = [pattern_0, pattern_1]
+    else:
+        # for chinese, we directly match the span
+        patterns = [re_span]
     res_matches = []
     for pattern in patterns:
         matches = re.finditer(pattern, text)
         res_matches += [match for match in matches]
 
     for match in res_matches:
-        start_ch_idx, end_ch_idx = match.span(1)  # get the capture group 1
-        # To get the start position of the first word of the matched NP span,
-        # we just need to count the number of spaces before the start character
-        start = text[:start_ch_idx].count(' ')
+        if language == 'en':
+            start_ch_idx, end_ch_idx = match.span(1)  # get the capture group 1
+            # To get the start|end position of the first word of the matched NP span,
+            # we just need to count the number of spaces before the start character
+            start = text[:start_ch_idx].count(' ')
+            end = text[:end_ch_idx].count(' ') + 1  # end position of the NP span, excluded
+        else:
+            start_ch_idx, end_ch_idx = match.span()  # get the capture group 0
+            # for chinese, the start and end position are the same as the character index
+            start, end = start_ch_idx, end_ch_idx
 
-        # To get the end position of the last word of the matched NP span,
-        # we just need to count the number of spaces before the end character
-        end = text[:end_ch_idx].count(' ') + 1  # end position of the NP span, excluded
         res_spans.append((start, end, span))
 
     return res_spans

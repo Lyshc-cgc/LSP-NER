@@ -1,7 +1,6 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-
-dataset_name: mit_restaurant
-data_path: data/{dataset_name}/mit_restaurant.py
+dataset_name: ontonotes5_en
+data_path: data/{dataset_name}/ontonotes5_en.py
 # the name of the configuration to be loaded,
 # see https://huggingface.co/docs/datasets/package_reference/loading_methods#datasets.load_dataset.name
 cfg_name: ~

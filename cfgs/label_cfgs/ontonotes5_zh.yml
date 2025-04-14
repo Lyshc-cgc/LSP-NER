@@ -1,0 +1,132 @@
+# https://huggingface.co/datasets/ontonotes/conll2012_ontonotesv5
+
+labels:
+  PERSON:
+    natural: Person
+    description: >-
+      人物实体，表示人名或人称代词。
+
+  NORP:
+    natural: Nationality, Other, Religion, Political
+    description: >-
+      国籍、宗教或政治团体实体（nationalities or religious or political groups），表示某一国家、宗教或政治团体的成员或信仰者。
+
+  FAC:
+    natural: Facility
+    description: >-
+      设施实体，表示建筑物或其他人造结构的名称。
+
+  ORG:
+    natural: Organization
+    description: >-
+      组织实体，表示机构、团体或公司的名称。
+
+  GPE:
+    natural: Geo-Political Entity
+    description: >-
+      地理政治实体，表示国家、城市、州或其他具有政治属性的地区的名称。
+
+  LOC:
+    natural: Location
+    description: >-
+      地点实体，表示非政治性的地理区域或自然地形的名称。
+
+  PRODUCT:
+    natural: Product
+    description: >-
+      产品实体，表示商品、艺术品或其他人造物品的名称、
+
+  DATE:
+    natural: Date
+    description: >-
+      日期实体，表示日历日期或其他日期表达方式。
+
+  TIME:
+    natural: Time
+    description: >-
+      时间实体，表示一天内的时间点或时间段。
+
+  PERCENT:
+    natural: Percentage
+    description: >-
+      百分比实体，表示百分数或分数。
+
+  MONEY:
+    natural: Money
+    description: >-
+      货币实体，表示金钱或货币单位。
+
+  QUANTITY:
+    natural: Quantity
+    description: >-
+      数量实体，表示除百分比和货币之外的其他数量或度量单位。
+
+  ORDINAL:
+    natural: Ordinal number
+    description: >-
+      序数实体，表示排列顺序的词语。
+
+  CARDINAL:
+    natural: Cardinal number
+    description: >-
+      基数实体，表示数字。
+
+  EVENT:
+    natural: Event
+    description: >-
+      事件实体，表示具有特定时间和地点的事件或节日的名称。
+
+  WORK_OF_ART:
+    natural: Work of art
+    description: >-
+      艺术作品实体，表示书籍、歌曲、电影等艺术作品的名称。
+
+  LAW:
+    natural: Law
+    description: >-
+      法律实体，表示法律、法规或条约的名称。
+
+  LANGUAGE:
+    natural: Language
+    description: >-
+      语言实体，表示一种语言的名称。
+
+raw_bio: True  # a flag to indicate whether the labels are in BIO format in the raw dataset.(data/*/raw/*)
+raw_label2id:  # the label2id mapping in the raw datasets. (data/*/raw/*)
+  O: 0
+  B-PERSON: 1
+  I-PERSON: 2
+  B-NORP: 3
+  I-NORP: 4
+  B-FAC: 5
+  I-FAC: 6
+  B-ORG: 7
+  I-ORG: 8
+  B-GPE: 9
+  I-GPE: 10
+  B-LOC: 11
+  I-LOC: 12
+  B-PRODUCT: 13
+  I-PRODUCT: 14
+  B-DATE: 15
+  I-DATE: 16
+  B-TIME: 17
+  I-TIME: 18
+  B-PERCENT: 19
+  I-PERCENT: 20
+  B-MONEY: 21
+  I-MONEY: 22
+  B-QUANTITY: 23
+  I-QUANTITY: 24
+  B-ORDINAL: 25
+  I-ORDINAL: 26
+  B-CARDINAL: 27
+  I-CARDINAL: 28
+  B-EVENT: 29
+  I-EVENT: 30
+  B-WORK_OF_ART: 31
+  I-WORK_OF_ART: 32
+  B-LAW: 33
+  I-LAW: 34
+  B-LANGUAGE: 35
+  I-LANGUAGE: 36

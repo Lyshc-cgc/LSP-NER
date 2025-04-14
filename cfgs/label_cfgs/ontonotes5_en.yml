@@ -1,3 +1,5 @@
+# https://huggingface.co/datasets/tner/ontonotes5
+
 labels:
   PERSON:
     natural: Person

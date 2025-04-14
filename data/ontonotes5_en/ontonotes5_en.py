@@ -1,4 +1,6 @@
 """ NER dataset compiled by T-NER library https://github.com/asahi417/tner/tree/master/tner """
+# https://huggingface.co/datasets/tner/ontonotes5
+
 import json
 from itertools import chain
 import datasets

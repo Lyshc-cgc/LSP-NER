@@ -10,6 +10,7 @@ import openai
 import asyncio
 import concurrent.futures
 import uuid
+import ast
 
 from pathlib import Path
 from openai import OpenAI, AsyncOpenAI
@@ -178,7 +179,8 @@ class Annotation(Label):
                     description = ''
                 else:
                     if 'des_format' in anno_cfg.keys() and anno_cfg['des_format'] == 'simple':  # use simple description
-                        description = self.labels[type]['description'].split('.')[:2]  # only show the first two sentences
+                        # only show the first two sentences
+                        description = re.split(r"[.。]", self.labels[type]['description'])[:2]
                         description = ' '.join(description)
                     else:  # use full description
                         description = self.labels[type]['description']
@@ -226,6 +228,8 @@ class Annotation(Label):
             k_shot = anno_cfg['k_shot']
             chat_msg_template_list = []  # store the chat message template for each label
             all_labels = list(self.label2id.keys())
+            join_character = ' ' if anno_cfg['language'] == 'en' else ''
+
             if 'O' in all_labels:
                 all_labels.remove('O')
             if k_shot != 0:
@@ -240,7 +244,7 @@ class Annotation(Label):
                     with jsonlines.open(k_shot_file) as reader:
                         for line in reader:
                             gold_mentions = set()  # store the gold mentions according to the target label
-                            sentence = ' '.join((line['tokens']))  # sentence
+                            sentence = join_character.join((line['tokens']))  # sentence
 
                             # 1. find the gold spans according to the target label
                             for start, end, entity_mention, label_id in line['spans_labels']:
@@ -259,11 +263,21 @@ class Annotation(Label):
                             if len(gold_mentions) >= 1:
                                 sents.append(sentence)
                                 for start, end, mention in gold_mentions:
-                                    formatted_mention = f'@@ {mention} ##'
-                                    output = output + line['tokens'][pre_end:start] + [formatted_mention]
+
+                                    if anno_cfg['language'] == 'en':  # for english, start|end are the token index
+                                        formatted_mention = f'@@ {mention} ##'
+                                        output = output + line['tokens'][pre_end:start] + [formatted_mention]
+                                    else:  # for chinese, start|end are the char index
+                                        formatted_mention = f'@@{mention}##'
+                                        output = output + [sentence[pre_end:start]] + [formatted_mention]
                                     pre_end = end
-                                output += line['tokens'][pre_end:]  # add the rest tokens, or line['tokens'][end:]
-                                output = '"' + ' '.join(output) + '"'
+
+                                # add the rest tokens
+                                if anno_cfg['language'] == 'en':
+                                    output += line['tokens'][pre_end:]  # or line['tokens'][end:]
+                                else:
+                                    output += [sentence[pre_end:]]
+                                output = '"' + join_character.join(output) + '"'
                                 instance = prompt_template['instance_template'].format(label=label, sentence=sentence, output=output)
                                 examples += f'{index + 1})\n{instance}\n'
                                 index += 1
@@ -313,6 +327,8 @@ class Annotation(Label):
         else:
             examples = None
             k_shot = anno_cfg['k_shot']
+            join_character = ' ' if anno_cfg['language'] == 'en' else ''
+
             if k_shot != 0:
                 # read all examples from the support set
                 example_list = []
@@ -322,7 +338,7 @@ class Annotation(Label):
                 k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
                 with jsonlines.open(k_shot_file) as reader:
                     for line in reader:
-                        sentence = ' '.join((line['tokens']))
+                        sentence = '***' if kwargs['ignore_sent'] else join_character.join((line['tokens']))
                         output = '['
                         label_mention_pairs = fu.get_label_mention_pairs(line['spans_labels'],
                                                                          kwargs['label_mention_map_portion'],
@@ -368,6 +384,8 @@ class Annotation(Label):
             examples = None
             k_shot = anno_cfg['k_shot']
             chat_msg_template_list = []  # store the chat message template for each label subset
+            join_character = ' ' if anno_cfg['language'] == 'en' else ''
+
             if k_shot != 0:
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
                 k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}',f'train_support_set_{k_shot}_shot.jsonl')
@@ -379,7 +397,7 @@ class Annotation(Label):
                     sents, empty_sents = [], []  # store the sentence for non-empty and empty outputs
                     with jsonlines.open(k_shot_file) as reader:
                         for line in reader:
-                            sentence = ' '.join((line['tokens']))
+                            sentence = join_character.join((line['tokens']))
                             output = '['
                             for start, end, entity_mention, label_id in line['spans_labels']:
                                 label = self.id2label[int(label_id)]
@@ -454,6 +472,7 @@ class Annotation(Label):
             label_subsets = fu.get_label_subsets(all_labels, subset_size, anno_cfg['repeat_num'])
             examples = None
             k_shot = anno_cfg['k_shot']
+            join_character = ' ' if anno_cfg['language'] == 'en' else ''
             if k_shot != 0:
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
                 k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}',f'train_support_set_{k_shot}_shot.jsonl')
@@ -465,7 +484,7 @@ class Annotation(Label):
                     sents, empty_sents = [], []  # store the sentence for non-empty and empty outputs
                     with jsonlines.open(k_shot_file) as reader:
                         for line in reader:
-                            sentence = '***' if kwargs['ignore_sent'] else ' '.join((line['tokens']))
+                            sentence = '***' if kwargs['ignore_sent'] else join_character.join((line['tokens']))
                             output = '['
                             label_mention_pairs = fu.get_label_mention_pairs(line['spans_labels'],
                                                                              kwargs['label_mention_map_portion'],
@@ -510,7 +529,8 @@ class Annotation(Label):
         :return:
         """
         def _generate_chat_info(query_template, chat_msg_template, tokens):
-            sentence = ' '.join(tokens)
+            join_character = ' ' if anno_cfg['language'] == 'en' else ''
+            sentence = join_character.join(tokens)
             chat_message = copy.deepcopy(chat_msg_template)
             query = query_template.format(sentence=sentence, output='')
             if dialogue_style == 'batch_qa':
@@ -565,11 +585,17 @@ class Annotation(Label):
         :param kwargs: other parameters including,
             1) anno_style, indicate the annotation style including 'single_type', 'multi_type', 'subset_type'
             2) analysis, whether to extract the analysis process in the output text
+            3) language, the language of the sentence
         :return: if the single_type_prompt is True, return the predicted spans and their labels.
         """
-        import ast
+
         if not output_text:
             output_text = ''
+        if output_text.startswith('"'):
+            output_text = output_text.strip('"')
+        if output_text.endswith("'"):
+            output_text = output_text.strip("'")
+        output_text = output_text.strip()
         # output_text = output_text.strip().replace('\_', '_')
 
         # if kwargs['anno_style'] == 'single_type, we recognize all entity mention in the output_text given the type
@@ -594,18 +620,20 @@ class Annotation(Label):
             pattern = r'@@(.*?)##'
             matches = re.finditer(pattern, output_text, re.DOTALL)
             out_spans = []
-            for match in matches:
-                start_ch_idx, end_ch_idx = match.span(1)  # get the capture group 1, ('span')
-                span = output_text[start_ch_idx:end_ch_idx].strip()  # clear the white space around the span
+            for idx, match in enumerate(matches):
+                span = match.group(1).strip()  # extract the mention span
 
-                start_ch_idx, end_ch_idx = match.span(0)  # get the capture group 0, ('@@ span ##')
-                # To get the start position of the first word of the matched span in the original sentence,
-                # we just need to count the number of spaces before the start character ('@') in the output text
-                start = output_text[:start_ch_idx].count(' ')
-
-                # To get the end position of the last word of the matched span in the original sentence,
-                # we just need to count the number of spaces in the span
-                end = start + span.count(' ') + 1 # end position of the span, excluded
+                if kwargs.get('language', None) == 'en':
+                    start_ch_idx, end_ch_idx = match.span(0)  # get the capture group 0, ('@@ span ##')
+                    # To get the start position of the first word of the matched span in the original sentence,
+                    # we just need to count the number of spaces before the start character ('@') in the output text
+                    start = output_text[:start_ch_idx].count(' ')
+                    end = start + span.count(' ') + 1  # end position of the span, excluded
+                else:  # for chinese, character index is the token index
+                    start_ch_idx, end_ch_idx = match.span(1)  # get the capture group 1, ('span')
+                    # get start|end index of the span in the original sentence
+                    start = start_ch_idx - output_text[:start_ch_idx].count('@@') * 2 - output_text[:start_ch_idx].count('##') * 2
+                    end = start + len(span)
                 out_spans.append((str(start), str(end), span))
 
             return out_spans
@@ -637,7 +665,7 @@ class Annotation(Label):
                     tmp_spans = []
 
             for label, mention in tmp_spans:
-                founded_spans = fu.find_span(sentence, str(mention))
+                founded_spans = fu.find_span(sentence, str(mention), language=kwargs['language'])
                 out_spans += [(str(start), str(end), span, label) for start, end, span in set(founded_spans)]
             return out_spans
         else:
@@ -1108,11 +1136,11 @@ class Annotation(Label):
                 )
 
             # 2.4 when not using batch inference, get the response of the annotator
-            if not self.annotator.batch_infer and kwargs.get('dialogue_style') == 'batch_qa':
+            if not self.annotator.batch_infer and anno_cfg['dialogue_style'] == 'batch_qa':
                 if self.annotator.use_api:
                     # use LLM API and batch_qa
                     asy_logger.info('using api with batch_qa to annotate...')
-                    tasks = []  # store the tasks for each instance
+                    tasks = []   # store the tasks for each instance
                     for chat in all_chat_messagges:
                         tasks.append(
                             self.get_response(
@@ -1207,7 +1235,12 @@ class Annotation(Label):
                         outputs.append(output_text)
 
                         # process the output for each turn in the multi_qa
-                        out_spans = self._process_output(output_text, sent, anno_style=anno_style)
+                        out_spans = self._process_output(
+                            output_text,
+                            sent,
+                            anno_style=anno_style,
+                            language=anno_cfg['language']
+                        )
                         context_output = '['  # process output and append to chat message as context
                         tmp_pred_spans = []  # store prediction spans for each instance
                         for start, end, entity_mention, label in set(out_spans):
@@ -1233,7 +1266,12 @@ class Annotation(Label):
                 if anno_style == 'single_type':
                     tmp_pred_spans = []
                     for out_idx, (instance_id, chat_message, output, sent) in enumerate(batch):
-                        out_spans = self._process_output(output, sent, anno_style=anno_style)
+                        out_spans = self._process_output(
+                            output,
+                            sent,
+                            anno_style=anno_style,
+                            language=anno_cfg['language']
+                        )
                         if len(out_spans) == 0:
                             continue
                         # instances in a batch is corresponding to different label
@@ -1254,7 +1292,12 @@ class Annotation(Label):
                             continue
 
                         # the method of processing output of cand_mention_prompt and 'subset_type_prompt' are same to that of 'multi_type_prompt'
-                        out_spans = self._process_output(output, sent, anno_style=anno_style)
+                        out_spans = self._process_output(
+                            output,
+                            sent,
+                            anno_style=anno_style,
+                            language=anno_cfg['language']
+                        )
                         if len(out_spans) == 0:
                             continue
                         tmp_pred_spans = []
