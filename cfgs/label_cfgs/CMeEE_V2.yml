@@ -1,0 +1,59 @@
+# https://huggingface.co/datasets/Rosenberg/CMeEE-V2
+labels:
+  DIS:
+    natural: disease
+    description: >-
+      疾病是指导致病人处于非健康状态的原因或者医生对病人做出的诊断，并且是能够被治疗的，包括疾病或综合征、中毒或受伤、器官或细胞受损，
+      其对应的UMLS语义类型有疾病或者综合征（disease or syndrome）、中毒或受伤（injury or poisoning）等。
+  SYM:
+    natural: symptom
+    description: >-
+      临床表现是疾病的表现，泛指患者不适感觉以及通过检查得知的异常表现，主要包括症状、体征，其对应的UMLS语义类型有症
+      状或体征（sign or symptom）、异常检查结果（abnormal test results）等。
+  DRU:
+    natural: drug
+    description: >-
+      药物是指用来预防、治疗及诊断疾病的物质，其对应的UMLS 语义类型有临床药物（clinical drug）、抗生素（antibiotic）等。
+  EQU:
+    natural: equipment
+    description: >-
+      医疗设备泛指为诊断或治疗所使用的工具、器具、仪器等。主要包括检查设备、治疗设备，其对应的UMLS语义类型有医疗设备（medical device）、
+      药物传输设备（drug delivery device）等。
+  PRO:
+    natural: procedure
+    description: >-
+      医疗程序泛指为诊断或治疗所采取的措施、方法及过程，主要包括检查程序、治疗或预防程序，其对应的UMLS语义类型有化验过程（laboratory procedure）、
+      治疗或预防过程（therapeutic or preventive procedure）等。
+  BOD:
+    natural: body
+    description: >-
+      身体泛指细胞、组织、及位于人体特定区域的由细小物质成分组合而成的结构、器官、系统、肢体，另外包括身体产生或解剖身体产生的物质等，
+      主要包括身体部位、身体物质，其对应的UMLS语义类型有身体部位（body part）、组织（organ）、组织成分（organ component）等。
+  ITE:
+    natural: item
+    description: >-
+      医学检验项目是指检查涉及到的体液检查项目、重要生理指标以及其他检查项目，本文规定“医疗检验项目”主要针对人体而言，
+      是能够通过设备或实验检测出的项目，并且是能够被量化，有其对应的测量值或指标值，其对应的 UMLS 语义类型有实验室检查（laboratory test）等。
+  MIC:
+    natural: microbes
+    description: >-
+      微生物类包括细菌、病毒、真菌以及一些小型的原生生物、显微藻类等在内的一大类生物群体，另外包括微生物类产生的毒素、激素、酶等，
+      其对应的 UMLS 语义类型有细菌（virus）、真菌（fungus）等。
+  DEP:
+    natural: department
+    description: >-
+      科室主要是指医院或医疗机构所设有的科室，其对应的UMLS语义类型有医疗保健相关组织（health care related organization）等 。
+
+
+raw_bio: False  # a flag to indicate whether the labels are in BIO format in the raw dataset.(data/*/raw/*)
+raw_label2id:  # the label2id mapping in the raw datasets. (data/*/raw/*)
+  O: 0
+  dis: 1
+  sym: 2
+  dru: 3
+  equ: 4
+  pro: 5
+  bod: 6
+  ite: 7
+  mic: 8
+  dep: 9

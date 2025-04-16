@@ -9,8 +9,6 @@ from datasets import load_dataset, load_from_disk, Dataset
 import module.func_util as fu
 from module.label import Label
 
-logger = fu.get_logger('Processor')
-
 class Processor(Label):
     """
     The Processor class is used to process the data.
@@ -25,6 +23,7 @@ class Processor(Label):
         super().__init__(labels_cfg, natural_form)
         self.config = data_cfg
         self.natural_flag = 'natural' if natural_form else 'bio'  # use natural-form or bio-form
+        self.logger = fu.get_sync_logger()  # use sync logger for data processing
 
     def _get_span_and_tags(self, tokens, tags, language='en'):
         """
@@ -85,8 +84,6 @@ class Processor(Label):
         # store the last span
         if len(span) > 0:
             instance_spans.append((str(start), str(end), join_character.join(span)))
-            if span_tag is None:
-                print('span tag None')
             instance_spans_labels.append(span_tag)
         return instance_spans, instance_spans_labels
 
@@ -111,8 +108,8 @@ class Processor(Label):
         if not self.config['nested']:  # flat ner
             pbar = zip(all_raw_tokens, all_raw_tags)
         else:  # nested
-            start_position, end_position = instances['starts'], instances['ends']
-            pbar = zip(all_raw_tokens, start_position, end_position, all_raw_tags)
+            start_position, end_position, spans = instances['starts'], instances['ends'], instances['spans']
+            pbar = zip(all_raw_tokens, start_position, end_position, spans, all_raw_tags)
         for instance in pbar:
             if not self.config['nested']:  # flat NER
                 raw_tokens, raw_tags = instance
@@ -129,17 +126,24 @@ class Processor(Label):
                 res_tokens.append(raw_tokens)
                 res_tags.append(raw_tags)
                 res_spans_labels.append([(*gs, str(gst)) for gs, gst in zip(gold_spans, gold_spans_tags)])
+
             else:  # nested NER
-                raw_tokens, starts, ends, raw_tags = instance
+                raw_tokens, starts, ends, spans, raw_tags = instance
                 # 2.1.1 (optional) get the tag directly from the raw dataset
                 gold_spans = []  # store gold spans for this instance
-                for start, end, label_id in zip(starts, ends, raw_tags):
+                for start, end, span, label in zip(starts, ends, spans, raw_tags):
+                    label_id = None
+                    try:
+                        label_id = int(label)  # if label is a number
+                    except ValueError:
+                        label_id = self.covert_tag2id[label]  # if label is a string
                     # end position is excluded
-                    gold_spans.append((str(start), str(end), ' '.join(raw_tokens[start: end]), str(label_id)))
+                    gold_spans.append((str(start), str(end), span, str(label_id)))
                 # the elements' shape of res_spans_labels is like [(start, end (excluded), gold_mention_span, span_label_id)...]
                 res_spans_labels.append(gold_spans)
                 res_tokens.append(raw_tokens)
                 res_tags.append([])
+
 
         return {
             'tokens': res_tokens,
@@ -287,14 +291,14 @@ class Processor(Label):
             candidate_idx.update({label: tmp_ins})
 
         # 2. sample
-        logger.info(f"Sampling {k_shot}-shot support set from {sample_split} split...")
+        self.logger.info(f"Sampling {k_shot}-shot support set from {sample_split} split...")
         for label in label_nums.keys():
-            logger.info(f'Sampling {label} support set...')
+            self.logger.info(f'Sampling {label} support set...')
             while counter[label] < k_shot:
                 idxs = random.sample(candidate_idx[label], k=k_shot-counter[label])
                 support_set.update(idxs)
                 counter = _update_counter(support_set, counter)
-                logger.info(f'support set statistic: {counter}')
+                self.logger.info(f'support set statistic: {counter}')
 
         # 3. remove redundant instance
         raw_support_set = copy.deepcopy(support_set)
@@ -328,7 +332,7 @@ class Processor(Label):
         if sampling_strategy == 'random':
             if not seed or isinstance(seed, str):
                 seed = random.randint(0, 512)
-            logger.info(f"Random sampling with seed {seed}...")
+            self.logger.info(f"Random sampling with seed {seed}...")
             # https://huggingface.co/docs/datasets/process#shuffle
             # use Dataset.flatten_indices() to rewrite the entire dataset on your disk again to remove the indices mapping
             dataset_subset = dataset.shuffle(seed=seed).flatten_indices().select(range(size))
@@ -378,11 +382,11 @@ class Processor(Label):
 
         # 1. check and load the cached formatted dataset
         try:
-            logger.info('Try to load the preprocessed dataset from the cache...')
+            self.logger.info('Try to load the preprocessed dataset from the cache...')
             preprocessed_dataset = load_from_disk(preprocessed_dir)
         except FileNotFoundError:
             # 2. format datasets
-            logger.info('No cache found, start to preprocess the dataset...')
+            self.logger.info('No cache found, start to preprocess the dataset...')
             data_path = self.config['data_path'].format(dataset_name=self.config['dataset_name'])
             # raw dataset
             raw_dataset = load_dataset(

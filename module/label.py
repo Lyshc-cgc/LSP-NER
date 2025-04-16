@@ -14,7 +14,11 @@ class Label:
         self.raw_bio = labels_cfg['raw_bio']  # a flag to indicate whether the labels are in BIO format in the raw dataset.
         self.label2id = dict()
         self.id2label = dict()
-        self.covert_tag2id = dict() if self.raw_bio else None  # covert the original BIO label (tag) id to the new label id. e.g., {2:2,3:2} means 2 (B-DATE) and 3 (I-DATE) are the same (DATE, id=2).
+
+        # covert the original BIO label (tag) id to the new label id. e.g., {2:2,3:2} means 2 (B-DATE) and 3 (I-DATE) are the same (DATE, id=2).
+        # if the labels are not in BIO format in the raw datasets, there is no need to covert the original BIO label (tag) id to the new label id.
+        # key-value are same with to the label2id and id2label.
+        self.covert_tag2id = dict()
         if natural_form:  # use natural-language-form labels
             self.init_natural_labels()
         else:  # use simple-form labels
@@ -37,11 +41,10 @@ class Label:
                 self.id2label[idx] = label
                 idx += 1
 
-            # if the labels are not in BIO format in the raw datasets, there is no need to covert the
+            # if the labels are in BIO format in the raw datasets, we need to covert the
             # original BIO label (tag) id to the new label id.
-            if self.raw_bio and v not in self.covert_tag2id.keys():
-                # e.g., {2:2,3:2} means 2 (B-DATE) and 3 (I-DATE) are the same (DATE, id=2).
-                self.covert_tag2id[v] = self.label2id[label]
+            # e.g., {2:2,3:2} means 2 (B-DATE) and 3 (I-DATE) are the same (DATE, id=2).
+            self.covert_tag2id[v] = self.label2id[label]
 
     def init_natural_labels(self):
         """

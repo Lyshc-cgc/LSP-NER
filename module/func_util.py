@@ -1,5 +1,4 @@
 import sys
-import os
 import math
 import random
 import re
@@ -17,10 +16,11 @@ from aiologger.handlers.streams import AsyncStreamHandler
 from aiologger.handlers.files import AsyncFileHandler
 from aiologger.formatters.base import Formatter
 from yaml import SafeLoader
-from tqdm import tqdm
 
 # a context variable used to record coroutine id
 coroutine_id_var = contextvars.ContextVar('coroutine_id', default=None)
+_async_logger = None
+_sync_logger = None
 
 # formatter
 class CoroutineIDFormatter(Formatter):
@@ -31,54 +31,58 @@ class CoroutineIDFormatter(Formatter):
         record.coroutine_id = coroutine_id
         return super().format(record)
 
-def get_asy_logger(name, level=logging.INFO, log_file='test.log'):
-    logger: Logger = Logger(name=name, level=level)
+def get_async_logger(name='async', level=logging.INFO, log_file='test.log'):
+    global _async_logger
+    if _async_logger is None:
+        logger: Logger = Logger(name=name, level=level)
+        # file handler
+        asy_file_handler = AsyncFileHandler(
+            filename=log_file,
+            encoding="utf8"
+        )
 
-    # file handler
-    asy_file_handler = AsyncFileHandler(
-        filename=log_file,
-        encoding="utf8"
-    )
+        # stream handler
+        asy_stream_handler = AsyncStreamHandler(stream=sys.stdout)
 
-    # stream handler
-    asy_stream_handler = AsyncStreamHandler(stream=sys.stdout)
+        # set format
+        formatter = CoroutineIDFormatter(
+            "[%(asctime)s| %(levelname)s| %(name)s| %(coroutine_id)s| %(filename)s:%(lineno)d] %(message)s"
+        )
+        asy_file_handler.formatter = formatter
+        asy_stream_handler.formatter = formatter
 
-    # set format
-    formatter = CoroutineIDFormatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(coroutine_id)s | %(message)s"
-    )
-    asy_file_handler.formatter = formatter
-    asy_stream_handler.formatter = formatter
+        logger.add_handler(asy_file_handler)
+        logger.add_handler(asy_stream_handler)
+        _async_logger = logger
+    return _async_logger
 
-    logger.add_handler(asy_file_handler)
-    logger.add_handler(asy_stream_handler)
+def get_sync_logger(name='sync', level=logging.INFO, filename='test.log'):
+    global _sync_logger
+    if _sync_logger is None:
+        logger = logging.getLogger(name)
+        logger.setLevel(level)
 
-    return logger
+        # remove redundant handler
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
 
-def get_logger(name, level=logging.INFO, filename='test.log'):
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
+        # file handler to store log
+        file_handler = logging.FileHandler(filename)
+        file_handler.setLevel(level)
 
-    # remove redundant handler
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
+        # console handler to print log
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
 
-    # file handler to store log
-    file_handler = logging.FileHandler(filename)
-    file_handler.setLevel(level)
+        # format
+        formatter = logging.Formatter('[%(asctime)s| %(levelname)s| %(name)s| %(filename)s:%(lineno)d] %(message)s')
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
 
-    # console handler to print log
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
-
-    # format
-    formatter = logging.Formatter('[%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d ] %(message)s')
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    return logger
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+        _sync_logger = logger
+    return _sync_logger
 
 def get_config(cfg_file):
     """
@@ -234,7 +238,7 @@ def compute_span_f1_by_labels(gold_spans, pred_spans, id2label, res_file):
 
     ood_type_preds = []
     ood_mention_preds = []
-    for pred_span in tqdm(pred_spans, desc="compute metric"):
+    for pred_span in pred_spans:
         mention, label_id = pred_span[-2], pred_span[-1]  # shape like (start, end, mention span, label)
         label_id = int(label_id)  # shape like (start, end, span, label)
         label = id2label[label_id]
@@ -306,9 +310,9 @@ def compute_span_f1_by_labels(gold_spans, pred_spans, id2label, res_file):
 
     # convert to dataframe
     df_metrics = pd.DataFrame(list(label_record.values()))
-    print(f"===== Metrics for each label =====\n{df_metrics}")
     # cache the results
     df_metrics.to_csv(res_file, index=False)
+    return df_metrics
 
 def find_span(text: str, span: str, language: str = 'en'):
     """
@@ -422,10 +426,10 @@ def compute_lspi(label_sets: list):
     instances_num = len(label_sets)
 
     # remove the duplicated label sets
-    label_sets = remove_duplicated_label_sets(label_sets)
+    label_counters = remove_duplicated_label_sets(label_sets)
 
     # compute the label space per instance (LSPI)
-    label_space = len(label_sets)
+    label_space = len(label_counters)
     lspi = label_space/instances_num
     return lspi
 

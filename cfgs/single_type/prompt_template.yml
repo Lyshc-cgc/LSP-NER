@@ -6,7 +6,7 @@ prompt_template: >-
   {examples_prompt}
 
 system_role: >-
-  You are a professional and helpful crowdsourcing data annotator using English with the help of description of types.
+  You are a professional and helpful crowdsourcing data annotator with the help of description of types.
 task_prompt: >-
   Your task is to identify all '{task_label}' named entities in the sentence.
   Your output should be a sentence with the entity mention marked with the "@@" and "##" symbols, where "@@" marks the 

@@ -12,18 +12,17 @@ from module import Annotation, Processor, Annotator
 # 'ontonotes5_en',
 # 'mit_restaurant',
 # 'mit_movies'
-dataset_names = ['ontonotes5_zh']
-use_api = False
+# 'CMeEE_V2'
+dataset_names = ['ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh']  # 'ontonotes5_en', 'mit_movies',
+use_api = True
 api_model = 'deepseek'  # 'qwen', 'deepseek', 'glm', 'gpt'
-local_model = 'Qwen2.5'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
-seeds = [22]
-test_subset_size = 20
+local_model = 'Mistral'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
+seeds = [22, 32, 42]
+test_subset_size = 100
 concurrency_level = 10  # number of concurrent requests
 
-asy_logger = fu.get_asy_logger('run_script')
-logger = fu.get_logger('run_script')
-
 async def main():
+    logger = fu.get_async_logger()
 
     config = fu.get_config('config.yml')
     # 1. load annotator
@@ -72,24 +71,24 @@ async def main():
             assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs')
 
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
-                logger.error('multi_qa style only support mt_fs')
+                await logger.error('multi_qa style only support mt_fs')
                 dialogue_style = 'batch_qa'
             if dialogue_style == 'multi_qa' and use_api and annotator.batch_infer:
-                logger.error('batch_qa style cannot support batch inference using API')
+                await logger.error('batch_qa style cannot support batch inference using API')
                 annotator.batch_infer = False  # set batch_infer to False for batch_qa
 
             # 3.4 other testing settings
-            # if prompt_type == 'sc_fs':
-            #     subset_sizes = [0.1, 0.2, 0.3, 0.4, 0.5] # label subset sizes for sc_fs
-            # else:
-            #     subset_sizes = [0.5]
+            if prompt_type == 'sc_fs':
+                subset_sizes = [0.1, 0.2, 0.3, 0.4, 0.5] # label subset sizes for sc_fs
+            else:
+                subset_sizes = [0.5]
 
+            subset_sizes= [0.5]
             ignore_sent_set = [False] # [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
             label_mention_map_portions_set = [[1]]# [1, 0.75, 0.5, 0.25], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
             repeat_num = 1
             demo_times = 1
-            demo_times_exp = False  # whether to carry out experiments on demo times
-            subset_size = 0.5
+            # subset_size = 0.5
 
             anno_cfg_paths = config['anno_cfgs'][prompt_type]
             anno_cfgs = [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
@@ -98,67 +97,65 @@ async def main():
             results = []  # for storing the results with different cfg and seeds
             for ignore_sent, label_mention_map_portions in zip(ignore_sent_set, label_mention_map_portions_set):
                 for label_mention_map_portion in label_mention_map_portions:
-                    for rep_num in range(repeat_num):
-                        for anno_cfg in anno_cfgs:
-                            logger.info(f'dataset: {dataset_name}')
-                            logger.info(f'language: {language}')
-                            logger.info(f'use api: {use_api}')
-                            logger.info(f'api model: {api_model}')
-                            logger.info(f'local model: {local_model}')
-                            logger.info(f'use prompt type: {prompt_type}')
-                            logger.info(f'test subset size: {test_subset_size}')
-                            logger.info(f'subset sampling strategy: {sampling_strategy}')
-                            logger.info(f'dialogue style: {dialogue_style}')
-                            logger.info(f'ignore sentence: {ignore_sent}')
-                            logger.info(f'label-mention map portion: {label_mention_map_portion}')
+                    for subset_size in subset_sizes:
+                        for rep_num in range(repeat_num):
+                            for anno_cfg in anno_cfgs:
+                                await logger.info(f'dataset: {dataset_name}')
+                                await logger.info(f'language: {language}')
+                                await logger.info(f'use api: {use_api}')
+                                await logger.info(f'api model: {api_model}')
+                                await logger.info(f'local model: {local_model}')
+                                await logger.info(f'use prompt type: {prompt_type}')
+                                await logger.info(f'test subset size: {test_subset_size}')
+                                await logger.info(f'subset sampling strategy: {sampling_strategy}')
+                                await logger.info(f'dialogue style: {dialogue_style}')
+                                await logger.info(f'ignore sentence: {ignore_sent}')
+                                await logger.info(f'label-mention map portion: {label_mention_map_portion}')
 
-                            if prompt_type == 'mt_fs':
-                                logger.info(f'demo_times: {rep_num + 1}')
-                            elif prompt_type == 'sc_fs':
-                                logger.info(f'repeat num: {rep_num + 1}')
+                                if prompt_type == 'mt_fs':
+                                    await logger.info(f'demo_times: {rep_num + 1}')
+                                elif prompt_type == 'sc_fs':
+                                    await logger.info(f'repeat num: {rep_num + 1}')
 
-                            if demo_times_exp:
                                 anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
-                            else:
-                                anno_cfg['demo_times'] = demo_times
-                            anno_cfg['language'] = language
-                            anno_cfg['repeat_num'] = rep_num + 1  # for sc_fs
-                            anno_cfg['subset_size'] = subset_size
-                            anno_cfg['prompt_template'] = fu.get_config(anno_cfg['prompt_template_dir'])
-                            anno_cfg['label_mention_map_portion'] = label_mention_map_portion
-                            anno_cfg['ignore_sent'] = ignore_sent
-                            anno_cfg['dialogue_style'] = dialogue_style
-                            anno_cfg['sampling_strategy'] = sampling_strategy
+                                anno_cfg['language'] = language
+                                anno_cfg['repeat_num'] = rep_num + 1  # for sc_fs
+                                anno_cfg['subset_size'] = subset_size
+                                anno_cfg['prompt_template'] = fu.get_config(anno_cfg['prompt_template_dir'])
+                                anno_cfg['label_mention_map_portion'] = label_mention_map_portion
+                                anno_cfg['ignore_sent'] = ignore_sent
+                                anno_cfg['dialogue_style'] = dialogue_style
+                                anno_cfg['sampling_strategy'] = sampling_strategy
 
-                            # 3. run the annotation with the given seed
-                            tasks = []
-                            for seed in seeds:
-                                if test_subset_size > 0:
-                                    loop = asyncio.get_running_loop()
-                                    dataset_subset = await loop.run_in_executor(
-                                        None,
-                                        proc.subset_sampling,
-                                        dataset,
-                                        test_subset_size,
-                                        sampling_strategy,
-                                        seed
+                                # 3. run the annotation with the given seed
+                                tasks = []
+                                for seed in seeds:
+                                    if test_subset_size > 0:
+                                        loop = asyncio.get_running_loop()
+                                        dataset_subset = await loop.run_in_executor(
+                                            None,
+                                            proc.subset_sampling,
+                                            dataset,
+                                            test_subset_size,
+                                            sampling_strategy,
+                                            seed
+                                        )
+
+                                    await logger.info(f"anno cfg: {anno_cfg['name']}")
+                                    tasks.append(
+                                        anno.annotate_by_one(dataset_subset,
+                                                             anno_cfg=anno_cfg,
+                                                             dataset_name=dataset_name,
+                                                             eval=True,
+                                                             cache=True,
+                                                             prompt_type=prompt_type,
+                                                             seed=seed,
+                                                             concurrency_level=concurrency_level,
+                                                             )
                                     )
 
-                                logger.info(f"anno cfg: {anno_cfg['name']}")
-                                tasks.append(
-                                    anno.annotate_by_one(dataset_subset,
-                                                         anno_cfg=anno_cfg,
-                                                         dataset_name=dataset_name,
-                                                         eval=True,
-                                                         cache=True,
-                                                         prompt_type=prompt_type,
-                                                         seed=seed,
-                                                         concurrency_level=concurrency_level,
-                                                         )
-                                )
-
-                            # 4. save the results to a excel file
-                            results += await asyncio.gather(*tasks)
+                                # 4. save the results to a excel file
+                                results += await asyncio.gather(*tasks)
 
             # 6. save all the metrics to excel files
             start_row = 2  # the starting row of the excel file
@@ -181,6 +178,8 @@ async def main():
                     anno_cfg=anno_cfg,
                 )
             workbook.close()
+    await logger.shutdown()  # close the logger
+
 
 if __name__ == '__main__':
     # set 'spawn' start method in the main process to parallelize computation across several GPUs when using multi-processes in the map function

@@ -6,7 +6,7 @@ prompt_template: >-
   {examples_prompt}
 
 system_role: >-
-  You are a professional and helpful crowdsourcing data annotator using English with the help of description of types.
+  You are a professional and helpful crowdsourcing data annotator with the help of description of types.
 
 task_prompt: >-
   Identify the entities and recognize their types in the sentence.

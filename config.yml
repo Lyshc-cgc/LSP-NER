@@ -9,6 +9,7 @@ data_cfgs:
   mit_restaurant: cfgs/data_cfgs/mit_restaurant.yml
   mit_movies: cfgs/data_cfgs/mit_movies.yml
   genia: cfgs/data_cfgs/genia.yml
+  CMeEE_V2: cfgs/data_cfgs/CMeEE_V2.yml
 
 # annotation config
 anno_cfgs:
@@ -16,9 +17,9 @@ anno_cfgs:
     - cfgs/single_type/anno_cfg_st_fs_5.yml
     - cfgs/single_type/anno_cfg_st_fs_1.yml
   mt_fs:  # multi-type prompt, few-shot setting
-#    - cfgs/multi_type/anno_cfg_mt_fs_7.yml
+    - cfgs/multi_type/anno_cfg_mt_fs_7.yml
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
-#    - cfgs/multi_type/anno_cfg_mt_fs_3.yml
+    - cfgs/multi_type/anno_cfg_mt_fs_3.yml
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
 #    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
   sb_fs:  # subset type prompt, few-shot setting
@@ -40,6 +41,7 @@ label_cfgs:
   mit_restaurant: cfgs/label_cfgs/mit_restaurant.yml
   mit_movies: cfgs/label_cfgs/mit_movies.yml
   genia: cfgs/label_cfgs/genia.yml
+  CMeEE_V2: cfgs/label_cfgs/CMeEE_V2.yml
 
 # annotators config
 annotators_cfg: cfgs/annotators.yml
