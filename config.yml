@@ -17,9 +17,9 @@ anno_cfgs:
     - cfgs/single_type/anno_cfg_st_fs_5.yml
     - cfgs/single_type/anno_cfg_st_fs_1.yml
   mt_fs:  # multi-type prompt, few-shot setting
-    - cfgs/multi_type/anno_cfg_mt_fs_7.yml
+#    - cfgs/multi_type/anno_cfg_mt_fs_7.yml
     - cfgs/multi_type/anno_cfg_mt_fs_5.yml
-    - cfgs/multi_type/anno_cfg_mt_fs_3.yml
+#    - cfgs/multi_type/anno_cfg_mt_fs_3.yml
     - cfgs/multi_type/anno_cfg_mt_fs_1.yml
 #    - cfgs/multi_type/anno_cfg_mt_fs_0.yml
   sb_fs:  # subset type prompt, few-shot setting
@@ -29,6 +29,9 @@ anno_cfgs:
   sc_fs:  # subset candidate prompt, few-shot setting
     - cfgs/subset_cand/anno_cfg_sc_fs_5.yml
     - cfgs/subset_cand/anno_cfg_sc_fs_1.yml
+  self_cons:  # self-consistency, few-shot setting
+    - cfgs/self_consistency/anno_cfg_self_consistency_5.yml
+    - cfgs/self_consistency/anno_cfg_self_consistency_1.yml
 
 # api config
 api_cfg: cfgs/api.yml

@@ -1,0 +1,20 @@
+# Attention! ALL paths must be relative to the 'config.yml' file!
+name: self-con-5-shot # the name of the configuration
+setting_parent_dir: data/{dataset_name}  # parent directory of the dataset
+cache_dir: data/{dataset_name}/anno_res  # cache directory
+eval_dir: data/{dataset_name}/eval  # evaluation results file dir
+support_set_dir: data/{dataset_name}/support_set  # support set directory
+k_shot: 5  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
+des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
+subset_size: 0.5  # the number of types in the subset. you can set between 0 and 1 , or set an integer number.
+repeat_num: 5  # the number of times to repeat each label.  Default is 1.
+prompt_template_dir: cfgs/self_consistency/prompt_template.yml  # prompt template file
+temperature: 0.8  # self-consistency temperature.
+top_p: 0.9  # self-consistency top_p
+
+# the number of voters for each query. Default is 3.
+# for api annotator, we set n = num_voter to generate multiple outputs for each query
+# see https://platform.openai.com/docs/api-reference/chat/create#chat-create-n
+# for local annotator, we set num_return_sequences = num_voter to generate multiple outputs for each query
+# see https://huggingface.co/docs/transformers/main/en/main_classes/text_generation#transformers.GenerationConfig.num_return_sequences
+num_voters: 3

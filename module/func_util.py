@@ -387,7 +387,7 @@ def get_label_mention_pairs(original_pairs, label_mention_map_portion, id2label)
     :return:
     """
     random.shuffle(original_pairs)
-    wrong_pairs_num = int(len(original_pairs) * (1-label_mention_map_portion))
+    wrong_pairs_num = int(len(original_pairs) * (1 - label_mention_map_portion))
     tmp_wrong_pairs, correct_pairs = original_pairs[:wrong_pairs_num], original_pairs[wrong_pairs_num:]
     wrong_pairs = []
     for start, end, entity_mention, label_id in tmp_wrong_pairs:
@@ -476,17 +476,18 @@ def write_metrics_to_excel(worksheet, start_row, res_file, anno_cfg):
         worksheet.write(0, 0, 'label_mention_map_portion')
         worksheet.write(0, 1, 'rep_num')
         worksheet.write(0, 2, '5-shot')
+        worksheet.write(0, 3, 'subset_size')
         worksheet.write(0, metric_num + 4, '1-shot')
         if anno_cfg['k_shot'] == 5:  # 5-shot
-            head_row, head_col = 1, 3  # headers start from (1, 3)
-            data_row, data_col = 2, 3  # datas start from (2, 3)
+            head_row, head_col = 1, 4  # headers start from (1, 4)
+            data_row, data_col = 2, 4  # datas start from (2, 4)
         else:  # 1-shot
             head_row, head_col = 1, metric_num + 4  # headers start from (1, metric_num + 4)
             data_row, data_col = 2, metric_num + 4  # datas start from (2, metric_num + 4)
     elif start_row > 2:  # we continue to write data to the older worksheet
         if anno_cfg['k_shot'] == 5:  # 5-shot
-            head_row, head_col = 1, 3  # headers start from (1, 3)
-            data_row, data_col = start_row, 3  # datas start from (start_row, 3)
+            head_row, head_col = 1, 4  # headers start from (1, 4)
+            data_row, data_col = start_row, 4  # datas start from (start_row, 4)
         else:  # 1-shot
             head_row, head_col = 1, metric_num + 4  # headers start from (1, metric_num + 4)
             data_row, data_col = start_row, metric_num + 4  # datas start from (start_row, metric_num + 4)
@@ -498,6 +499,7 @@ def write_metrics_to_excel(worksheet, start_row, res_file, anno_cfg):
     worksheet.write(data_row, 0, anno_cfg['label_mention_map_portion'])
     worksheet.write(data_row, 1, rep_num)
     worksheet.write(data_row, 2, anno_cfg['annotator_name'])
+    worksheet.write(data_row, 3, anno_cfg['subset_size'])
     for line in eval_results:
         line = line.strip()
         line = line.split(' ')

@@ -14,11 +14,11 @@ from module import Annotation, Processor, Annotator
 # 'mit_movies'
 # 'CMeEE_V2'
 dataset_names = ['ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh']  # 'ontonotes5_en', 'mit_movies',
-use_api = True
+use_api = False
 api_model = 'deepseek'  # 'qwen', 'deepseek', 'glm', 'gpt'
 local_model = 'Mistral'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
 seeds = [22, 32, 42]
-test_subset_size = 100
+test_subset_size = 200
 concurrency_level = 10  # number of concurrent requests
 
 async def main():
@@ -67,8 +67,8 @@ async def main():
 
         # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
-        for prompt_type in ['sc_fs', 'st_fs', 'mt_fs']: # 'mt_fs', 'st_fs', 'sc_fs',
-            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs')
+        for prompt_type in ['sc_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons'
+            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons')
 
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
                 await logger.error('multi_qa style only support mt_fs')
@@ -83,11 +83,10 @@ async def main():
             else:
                 subset_sizes = [0.5]
 
-            subset_sizes= [0.5]
+            subset_sizes = [0.5]
             ignore_sent_set = [False] # [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
-            label_mention_map_portions_set = [[1]]# [1, 0.75, 0.5, 0.25], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
-            repeat_num = 1
-            demo_times = 1
+            label_mention_map_portions_set = [[1]]# [[1], [1, 0.75, 0.5, 0.25, 0]], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+            repeat_num = 6
             # subset_size = 0.5
 
             anno_cfg_paths = config['anno_cfgs'][prompt_type]
@@ -116,7 +115,11 @@ async def main():
                                     await logger.info(f'demo_times: {rep_num + 1}')
                                 elif prompt_type == 'sc_fs':
                                     await logger.info(f'repeat num: {rep_num + 1}')
-
+                                elif prompt_type == 'self_cons':
+                                    # if we use self-consistency,
+                                    # we need to set the temperature, top_p, num_return_sequences manually before init annotator
+                                    anno.annotator.annotator_cfg['anno_temperature'] = anno_cfg['temperature']
+                                    anno.annotator.annotator_cfg['anno_top_p'] = anno_cfg['top_p']
                                 anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
                                 anno_cfg['language'] = language
                                 anno_cfg['repeat_num'] = rep_num + 1  # for sc_fs
