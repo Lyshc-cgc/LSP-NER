@@ -378,24 +378,30 @@ def get_label_subsets(labels, sub_size, repeat_num=1, fixed_subsets=None):
         label_subsets += list(batched(labels, sub_size))  # batch method return a generator
     return label_subsets
 
-def get_label_mention_pairs(original_pairs, label_mention_map_portion, id2label):
+def get_label_mention_pairs(original_pairs, label_mention_map_portion, id2label, label_mention_map_choice='accuracy'):
     """
     Get the label-mention pairs, where the label-mention pairs are partially correct.
     :param original_pairs: the original label-mention pairs.
     :param label_mention_map_portion: the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
     :param id2label: a map from label id to the label name.
+    :param label_mention_map_choice: the choice of the label-mention pairs. If 'accuracy', we randomly choose the wrong label for each mention.
+        If 'redundancy', we randomly remove some of the label-mention pairs.
     :return:
     """
     random.shuffle(original_pairs)
-    wrong_pairs_num = int(len(original_pairs) * (1 - label_mention_map_portion))
-    tmp_wrong_pairs, correct_pairs = original_pairs[:wrong_pairs_num], original_pairs[wrong_pairs_num:]
-    wrong_pairs = []
-    for start, end, entity_mention, label_id in tmp_wrong_pairs:
-        label_ids = list(id2label.keys())
-        label_ids.remove(int(label_id))
-        wrong_label_id = random.choice(label_ids)
-        wrong_pairs.append((start, end, entity_mention, wrong_label_id))
-    res_pairs = correct_pairs + wrong_pairs
+    if label_mention_map_choice == 'accuracy':
+        wrong_pairs_num = int(len(original_pairs) * (1 - label_mention_map_portion))
+        tmp_wrong_pairs, correct_pairs = original_pairs[:wrong_pairs_num], original_pairs[wrong_pairs_num:]
+        wrong_pairs = []
+        for start, end, entity_mention, label_id in tmp_wrong_pairs:
+            label_ids = list(id2label.keys())
+            label_ids.remove(int(label_id))
+            wrong_label_id = random.choice(label_ids)
+            wrong_pairs.append((start, end, entity_mention, wrong_label_id))
+        res_pairs = correct_pairs + wrong_pairs
+    else:
+        keep_pairs_num = round(len(original_pairs) * label_mention_map_portion)  # keep the portion of the original pairs
+        res_pairs = original_pairs[:keep_pairs_num]
     return res_pairs
 
 def remove_duplicated_label_sets(label_sets: list):

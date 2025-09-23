@@ -14,9 +14,9 @@ from module import Annotation, Processor, Annotator
 # 'mit_movies'
 # 'CMeEE_V2'
 dataset_names = ['ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh']  # 'ontonotes5_en', 'mit_movies',
-use_api = False
-api_model = 'deepseek'  # 'qwen', 'deepseek', 'glm', 'gpt'
-local_model = 'Mistral'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
+use_api = True
+api_model = 'gpt'  # 'qwen', 'deepseek', 'glm', 'gpt'
+local_model = 'Qwen1.5'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
 seeds = [22, 32, 42]
 test_subset_size = 200
 concurrency_level = 10  # number of concurrent requests
@@ -67,7 +67,7 @@ async def main():
 
         # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
-        for prompt_type in ['sc_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons'
+        for prompt_type in ['mt_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons'
             assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons')
 
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
@@ -85,9 +85,9 @@ async def main():
 
             subset_sizes = [0.5]
             ignore_sent_set = [False] # [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
-            label_mention_map_portions_set = [[1]]# [[1], [1, 0.75, 0.5, 0.25, 0]], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
-            repeat_num = 6
-            # subset_size = 0.5
+            label_mention_map_portions_set = [[1]] # [[1]]  [[1], [1, 0.75, 0.5, 0.25, 0]], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+            label_mention_map_choice = 'redundancy'  # 'accuracy', 'redundancy'
+            repeat_num = 1
 
             anno_cfg_paths = config['anno_cfgs'][prompt_type]
             anno_cfgs = [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
@@ -110,6 +110,7 @@ async def main():
                                 await logger.info(f'dialogue style: {dialogue_style}')
                                 await logger.info(f'ignore sentence: {ignore_sent}')
                                 await logger.info(f'label-mention map portion: {label_mention_map_portion}')
+                                await logger.info(f'label_mention_map_choice: {label_mention_map_choice}')
 
                                 if prompt_type == 'mt_fs':
                                     await logger.info(f'demo_times: {rep_num + 1}')
@@ -126,6 +127,7 @@ async def main():
                                 anno_cfg['subset_size'] = subset_size
                                 anno_cfg['prompt_template'] = fu.get_config(anno_cfg['prompt_template_dir'])
                                 anno_cfg['label_mention_map_portion'] = label_mention_map_portion
+                                anno_cfg['label_mention_map_choice'] = label_mention_map_choice
                                 anno_cfg['ignore_sent'] = ignore_sent
                                 anno_cfg['dialogue_style'] = dialogue_style
                                 anno_cfg['sampling_strategy'] = sampling_strategy

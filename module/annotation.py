@@ -12,6 +12,7 @@ import uuid
 import ast
 
 from pathlib import Path
+
 from openai import OpenAI, AsyncOpenAI
 from datasets import load_from_disk, Dataset
 # from tqdm import tqdm
@@ -346,7 +347,8 @@ class Annotation(Label):
                         label_mention_pairs = fu.get_label_mention_pairs(
                             line['spans_labels'],
                             kwargs['label_mention_map_portion'],
-                            self.id2label
+                            self.id2label,
+                            kwargs['label_mention_map_choice']
                         )
                         for start, end, entity_mention, label_id in label_mention_pairs:
                             label = self.id2label[int(label_id)]
@@ -495,7 +497,8 @@ class Annotation(Label):
                             label_mention_pairs = fu.get_label_mention_pairs(
                                 line['spans_labels'],
                                 kwargs['label_mention_map_portion'],
-                                self.id2label
+                                self.id2label,
+                                kwargs['label_mention_map_choice']
                             )
                             for start, end, entity_mention, label_id in label_mention_pairs:
                                 label = self.id2label[int(label_id)]
@@ -557,7 +560,8 @@ class Annotation(Label):
                         label_mention_pairs = fu.get_label_mention_pairs(
                             line['spans_labels'],
                             kwargs['label_mention_map_portion'],
-                            self.id2label
+                            self.id2label,
+                            kwargs['label_mention_map_choice']
                         )
                         for start, end, entity_mention, label_id in label_mention_pairs:
                             label = self.id2label[int(label_id)]
@@ -1087,7 +1091,10 @@ class Annotation(Label):
             if anno_cfg['ignore_sent']:
                 annotator_name += '-is'
             if anno_cfg['label_mention_map_portion'] < 1:
-                annotator_name += '-lmp_{}'.format(anno_cfg['label_mention_map_portion'])
+                if anno_cfg['label_mention_map_choice'] == 'redundancy':
+                    annotator_name += '-lmp-red_{}'.format(anno_cfg['label_mention_map_portion'])
+                else:
+                    annotator_name += '-lmp_{}'.format(anno_cfg['label_mention_map_portion'])
         if kwargs['seed']:
             annotator_name += '-{}'.format(kwargs['seed'])
         anno_cfg['annotator_name'] = annotator_name
@@ -1149,6 +1156,7 @@ class Annotation(Label):
                     dialogue_style=anno_cfg['dialogue_style'],
                     ignore_sent=anno_cfg['ignore_sent'],
                     label_mention_map_portion=anno_cfg['label_mention_map_portion'],
+                    label_mention_map_choice=anno_cfg['label_mention_map_choice'],
                     dataset_name=dataset_name
                 )
 

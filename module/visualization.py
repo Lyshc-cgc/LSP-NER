@@ -9,11 +9,11 @@ res_template = ('../data/{dataset}/eval/span_bio/{method}/{method_setting}/simpl
 # key is the model name, value is the model name in the plot
 models = {
     'Qwen1.5': 'Qwen',
-    'Mistral': 'Mixtral',
-    'deepseek-v3': 'Deepseek'
+    'gpt-4o-mini': 'GPT-4o-m',
+    'deepseek-v3': 'Deepseek',
 }
 metric = 'f1'
-
+datasets = ('ontonotes5_en', 'mit_movies', 'ontonotes5_zh', 'CMeEE_V2')  # 'ontonotes5_en', 'mit_movies', 'ontonotes5_zh', 'CMeEE_V2'
 
 line_colors = ['#F09BA0', '#9BBBE1', '#8FBC8F']
 error_colors = ['#8D0405', '#060270', '#006400']
@@ -23,12 +23,13 @@ plt.rcParams["font.sans-serif"] = "DejaVu Sans Mono"
 plt.rcParams['axes.unicode_minus'] = False
 
 # for mini version
-# plt.rcParams.update({"font.size":20})  # controls default text size
-# plt. rc ('axes', titlesize=20) # fontsize of the title
-# plt. rc ('axes', labelsize=20) # fontsize of the x and y labels
-# plt. rc ('xtick', labelsize=20) # fontsize of the x tick labels
-# plt. rc ('ytick', labelsize=20) # fontsize of the y tick labels
-# plt. rc ('legend', fontsize=20) # fontsize of the legend
+size = 18  # 20
+plt.rcParams.update({"font.size":size})  # controls default text size
+plt. rc ('axes', titlesize=size) # fontsize of the title
+plt. rc ('axes', labelsize=size) # fontsize of the x and y labels
+plt. rc ('xtick', labelsize=size) # fontsize of the x tick labels
+plt. rc ('ytick', labelsize=size) # fontsize of the y tick labels
+plt. rc ('legend', fontsize=size) # fontsize of the legend
 
 def create_multi_bars(ax,
                       xlabels,
@@ -40,7 +41,8 @@ def create_multi_bars(ax,
                       legend_title='accuracy',
                       tick_step=1,
                       group_gap=0.2,
-                      bar_gap=0
+                      bar_gap=0,
+                      legend_loc='upper right',
                       ):
     '''
     生成多组数据的柱状图， refer to https://blog.csdn.net/mighty13/article/details/113873617
@@ -78,7 +80,7 @@ def create_multi_bars(ax,
     ticks = x + (group_width - bar_span) / 2
     ax.set_xticks(ticks)
     ax.set_xticklabels(xlabels)
-    ax.legend(title=legend_title, loc='upper right', frameon=True, fancybox=True, framealpha=0.7)
+    ax.legend(title=legend_title, loc=legend_loc, frameon=True, fancybox=True, framealpha=0.7)
     ax.grid(True, linestyle=':', alpha=0.6)
 
 def read_metric_from_txt_file(source_file) -> float:
@@ -104,7 +106,6 @@ class vis_theis:
         :return:
         """
         error_bar = True
-        datasets = ('ontonotes5_en', 'mit_movies', 'ontonotes5_zh', 'CMeEE_V2')
         k_shots = (1, 5)
         seeds = (22, 32, 42)
         demo_nums = (1, 2, 3, 4, 5, 6)
@@ -113,6 +114,8 @@ class vis_theis:
         x_label = 'duplicating nums'
         y_label = 'micro-f1 (%)'
         demo_num_dir = os.path.join(self.base_path, 'part1/demo_num')
+        if not os.path.exists(demo_num_dir):
+            os.makedirs(demo_num_dir)
         for dataset in datasets:
             save_file = os.path.join(demo_num_dir, f'{dataset}.{self.file_type}')
 
@@ -169,17 +172,16 @@ class vis_theis:
             print('save file:', save_file)
             fig.savefig(save_file, dpi=300)
 
-    def vis_label_proportion_part1(self,):
+    def vis_label_proportion_part1(self, label_mention_map_choice='accuracy'):
         """
         In part 1, visualize the proportion of corrected labeled data
 
         :param data:
-        :param error:
-        :param file_name: the file name to be saved
+        :param label_mention_map_choice: label_mention_map_choice: the choice of the label-mention pairs. If 'accuracy', we randomly choose the wrong label for each mention.
+            If 'redundancy', we randomly remove some of the label-mention pairs.
         :return:
         """
 
-        datasets = ('ontonotes5_en', 'mit_movies', 'ontonotes5_zh', 'CMeEE_V2')
         k_shots = (1, 5)
         seeds = (22, 32, 42)
         label_portions = (1, 0.75, 0.5, 0.25, 0)
@@ -188,9 +190,11 @@ class vis_theis:
 
         # x_label = 'models'
         y_label = 'micro-f1 (%)'
-        demo_num_dir = os.path.join(self.base_path, 'part1/label_proportion')
+        label_portion_dir = os.path.join(self.base_path, f'part1/label_proportion_{label_mention_map_choice}')
+        if not os.path.exists(label_portion_dir):
+            os.makedirs(label_portion_dir)
         for dataset in datasets:
-            save_file = os.path.join(demo_num_dir, f'{dataset}.{self.file_type}')
+            save_file = os.path.join(label_portion_dir, f'{dataset}.{self.file_type}')
 
             # each model has a different ax
             fig, axs = plt.subplots(1, len(k_shots), figsize=(5 * len(k_shots), 5), layout="compressed")
@@ -207,7 +211,11 @@ class vis_theis:
                         method_setting = 'rep_1'  # fixed value
                         f1_scores = []
                         for seed in seeds:
-                            if label_portion == 1:
+                            if label_mention_map_choice == 'redundancy' and label_portion < 1:
+                                model_setting = f'{model}-mt-{k_shot}-shot-lmp-red_{label_portion}-{seed}'
+                            elif label_mention_map_choice == 'redundancy' and label_portion == 1:
+                                model_setting = f'{model}-mt-{k_shot}-shot-{seed}'
+                            elif label_mention_map_choice == 'accuracy' and label_portion == 1:
                                 model_setting = f'{model}-mt-{k_shot}-shot-is-{seed}'
                             else:
                                 model_setting = f'{model}-mt-{k_shot}-shot-is-lmp_{label_portion}-{seed}'
@@ -232,7 +240,8 @@ class vis_theis:
                     shot_stds,
                     bar_colors,
                     label_portions,
-                    legend_title='accuracy',
+                    legend_title='accuracy' if label_mention_map_choice == 'accuracy' else 'LRR',
+                    legend_loc='upper left',
                     )
 
             print('save file:', save_file)
@@ -245,7 +254,6 @@ class vis_theis:
         """
 
         error_bar = True
-        datasets = ('ontonotes5_en', 'mit_movies', 'ontonotes5_zh', 'CMeEE_V2')
         k_shots = (1, 5)
         seeds = (22, 32, 42)
         rep_nums = (1, 2, 3, 4, 5, 6)
@@ -255,6 +263,8 @@ class vis_theis:
         x_label = 'partition times'
         y_label = 'micro-f1 (%)'
         part_times_dir = os.path.join(self.base_path, 'part2/partition_times')
+        if not os.path.exists(part_times_dir):
+            os.makedirs(part_times_dir)
         for dataset in datasets:
             save_file = os.path.join(part_times_dir, f'{dataset}.{self.file_type}')
 
@@ -318,7 +328,6 @@ class vis_theis:
         """
 
         error_bar = True
-        datasets = ('ontonotes5_en', 'mit_movies', 'ontonotes5_zh', 'CMeEE_V2')
         k_shots = (1, 5)
         seeds = (22, 32, 42)
         rep_num = 1
@@ -327,9 +336,11 @@ class vis_theis:
 
         x_label = 'subset proportion'
         y_label = 'micro-f1 (%)'
-        part_times_dir = os.path.join(self.base_path, 'part2/subset_proportion')
+        subset_proportion_dir = os.path.join(self.base_path, 'part2/subset_proportion')
+        if not os.path.exists(subset_proportion_dir):
+            os.makedirs(subset_proportion_dir)
         for dataset in datasets:
-            save_file = os.path.join(part_times_dir, f'{dataset}.{self.file_type}')
+            save_file = os.path.join(subset_proportion_dir, f'{dataset}.{self.file_type}')
 
             # each k_shot has a different ax
             fig, axs = plt.subplots(1, len(k_shots), figsize=(5 * len(k_shots), 5), layout="compressed")
@@ -379,7 +390,7 @@ class vis_theis:
                             color=line_colors[model_idx],
                             label=models[model]
                         )
-                    axs[shot_idx].legend(title='models', loc='upper right', frameon=True, fancybox=True)
+                    axs[shot_idx].legend(title='models', loc='lower right', frameon=True, fancybox=True)
                     axs[shot_idx].grid(True, linestyle=':', alpha=0.6)
             print('save file:', save_file)
             fig.savefig(save_file, dpi=300)
@@ -395,7 +406,7 @@ class vis_theis:
         self.vis_demo_num_part1()
 
         # 1.2. the proportion of corrected labeled data
-        self.vis_label_proportion_part1()
+        self.vis_label_proportion_part1(label_mention_map_choice='redundancy')
 
         # 2. part 2
         # 2.1 the repeat number for demonstrations, subset candidate
