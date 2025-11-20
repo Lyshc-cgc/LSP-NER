@@ -1,7 +1,7 @@
 # api config
 
 qwen:
-  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1  # or use VLLM server
   model: qwen2.5-72b-instruct # qwen-long, qwen-plus
   api_key: DASHSCOPE_API_KEY  # the os environment variable name
   batch_infer: True  # whether to use the batch inference
@@ -17,14 +17,14 @@ deepseek:
   base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
   model: deepseek-v3
   api_key: DASHSCOPE_API_KEY  # the os environment variable name, DEEPSEEK_API_KEY for official key from DeepSeek
-  batch_infer: False  # whether to use the bacth api
+  batch_infer: True  # whether to use the bacth api
   concurrency_level: 10 # the concurrency level for api request
 
 gpt:
   base_url: https://jeniya.cn/v1
 #  base_url: https://fastapi.top/v1
 #  base_url: https://api.chatgpt-3.vip/v1
-  model: gpt-4o-mini # gpt-4o-mini, gpt-3.5-turbo(gpt-3.5-turbo-0125), gpt-3.5-turbo-instruct
+  model: gpt-4o-mini # gpt-4.1-nano, gpt-5-nano-2025-08-07, gpt-4o-mini, gpt-3.5-turbo(gpt-3.5-turbo-0125), gpt-3.5-turbo-instruct
   api_key: OPENAI_API_KEY  # the os environment variable name
   batch_infer: False  # whether to use the bacth api
   concurrency_level: 10 # the concurrency level for api request

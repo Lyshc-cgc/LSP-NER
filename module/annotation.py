@@ -14,7 +14,7 @@ import ast
 from pathlib import Path
 
 from openai import OpenAI, AsyncOpenAI
-from datasets import load_from_disk, Dataset
+from datasets import load_from_disk, Dataset, load_dataset
 # from tqdm import tqdm
 from tqdm.asyncio import tqdm, tqdm_asyncio
 import module.func_util as fu
@@ -223,6 +223,7 @@ class Annotation(Label):
         :param use_api: whether to use LLM API as annotator
         :param kwargs: other parameters, including,
             1) dataset_name: the name of the dataset.
+            2) seed: the random seed for sampling the support set
         :return:
         """
         if annotator_cfg['chat']:
@@ -238,7 +239,9 @@ class Annotation(Label):
                 all_labels.remove('O')
             if k_shot != 0:
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
-                k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                seed = kwargs['seed']
+                support_set_dir = anno_cfg['support_set_info']['dir']
+                k_shot_file = os.path.join(support_set_dir, f'train_support_set_{k_shot}_shot_{seed}.jsonl')
                 prompt_template = anno_cfg['prompt_template']
 
                 for target_label in all_labels:  # init examples and system messages for each label
@@ -324,6 +327,7 @@ class Annotation(Label):
         :param kwargs: other parameters, including,
             1) dataset_name: the name of the dataset.
             2) label_mention_map_portion, the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+            3) seed: the random seed for sampling the support set
         :return:
         """
         if annotator_cfg['chat']:
@@ -338,8 +342,9 @@ class Annotation(Label):
                 example_list = []
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
                 prompt_template = anno_cfg['prompt_template']
-
-                k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                seed = kwargs['seed']
+                support_set_dir = anno_cfg['support_set_info']['dir']
+                k_shot_file = os.path.join(support_set_dir, f'train_support_set_{k_shot}_shot_{seed}.jsonl')
                 with jsonlines.open(k_shot_file) as reader:
                     for line in reader:
                         sentence = '***' if kwargs['ignore_sent'] else join_character.join((line['tokens']))
@@ -379,6 +384,7 @@ class Annotation(Label):
         :param kwargs: other parameters, including,
             1) dataset_name: the name of the dataset.
             2) dialogue_style: the style of the dialogue. 'batch_qa' or 'multi_qa'
+            3) seed: the random seed for sampling the support set
         :return: a list of chat message template for each label subset
         """
         if annotator_cfg['chat']:
@@ -396,7 +402,9 @@ class Annotation(Label):
 
             if k_shot != 0:
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
-                k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}',f'train_support_set_{k_shot}_shot.jsonl')
+                seed = kwargs['seed']
+                support_set_dir = anno_cfg['support_set_info']['dir']
+                k_shot_file = os.path.join(support_set_dir, f'train_support_set_{k_shot}_shot_{seed}.jsonl')
 
                 instance_template = anno_cfg['prompt_template']['instance_template'][kwargs['dialogue_style']]
                 for label_subset in label_subsets:
@@ -462,6 +470,7 @@ class Annotation(Label):
             2) dialogue_style: the style of the dialogue. 'batch_qa' or 'multi_qa'
             3) ignore_sent: whether to ignore the sentence in the chat message. If True, the sentence will be shown as '***'.
             4) label_mention_map_portion, the portion of the correct label-mention pairs. Default is 1, which means all the label-mention pairs are correct.
+            5) seed: the random seed for sampling the support set
         :return: a list of chat message template for each label subset
         """
         if annotator_cfg['chat']:
@@ -483,16 +492,22 @@ class Annotation(Label):
             join_character = ' ' if anno_cfg['language'] == 'en' else ''
             if k_shot != 0:
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
-                k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}',f'train_support_set_{k_shot}_shot.jsonl')
+                seed = kwargs['seed']
+                support_set_dir = anno_cfg['support_set_info']['dir']
+                k_shot_file = os.path.join(support_set_dir, f'train_support_set_{k_shot}_shot_{seed}.jsonl')
 
                 instance_template = anno_cfg['prompt_template']['instance_template'][kwargs['dialogue_style']]
                 examples = ''
                 index = 0
                 for label_subset in label_subsets:
+                    if anno_cfg['given_types_subset']:
+                        subset_types = ', '.join(label_subset)
                     sents, empty_sents = [], []  # store the sentence for non-empty and empty outputs
                     with jsonlines.open(k_shot_file) as reader:
                         for line in reader:
                             sentence = '***' if kwargs['ignore_sent'] else join_character.join((line['tokens']))
+                            if anno_cfg['given_types_subset']:
+                                sentence += f"\ntypes subset: {subset_types}\n"
                             output = '['
                             label_mention_pairs = fu.get_label_mention_pairs(
                                 line['spans_labels'],
@@ -537,6 +552,7 @@ class Annotation(Label):
         :param kwargs: other parameters, including,
             1) dataset_name: the name of the dataset.
             2) label_mention_map_portion, the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
+            3) seed: the random seed for sampling the support set
         :return:
         """
         if annotator_cfg['chat']:
@@ -552,7 +568,9 @@ class Annotation(Label):
                 anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=kwargs['dataset_name'])
                 prompt_template = anno_cfg['prompt_template']
 
-                k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+                seed = kwargs['seed']
+                support_set_dir = anno_cfg['support_set_info']['dir']
+                k_shot_file = os.path.join(support_set_dir, f'train_support_set_{k_shot}_shot_{seed}.jsonl')
                 with jsonlines.open(k_shot_file) as reader:
                     for line in reader:
                         sentence = '***' if kwargs['ignore_sent'] else join_character.join((line['tokens']))
@@ -580,8 +598,71 @@ class Annotation(Label):
 
             # if k_shot == 0, examples is None; otherwise, examples is a string
             chat_msg_template = self._init_chat_msg_template(examples, annotator_cfg=annotator_cfg, anno_cfg=anno_cfg, use_api=use_api)
-            chat_msg_template_list = [chat_msg_template] * anno_cfg.get('num_voters', 1)  # init the chat message template for each voter
+            chat_msg_template_list = [chat_msg_template] * anno_cfg.get('num_voters', 3)  # init the chat message template for each voter
         return chat_msg_template_list
+
+    def _retrieval_fs_msg(self, annotator_cfg, anno_cfg, use_api, **kwargs) -> list[None | dict[str, str]]:
+        """
+        Init the chat messages for the annotation models using retrieval-based few-shot settings.
+        Init examples from the support set sampled from the dataset.
+
+        :param annotator_cfg: The parameters of the annotation model.
+        :param anno_cfg: the configuration of the annotation settings.
+        :param use_api: whether to use LLM API as annotator.
+        :param kwargs: other parameters, including,
+            1) dataset_name: the name of the dataset.
+            2) seed: the random seed for sampling the support set
+            3) dataset_ids: the ids of the test data to be annotated. We will use these ids to retrieve the support set for each test instance.
+        """
+        k_shot = anno_cfg['k_shot']
+        chat_msg_template_list = []  # store the chat message template for each label
+        all_labels = list(self.label2id.keys())
+        join_character = ' ' if anno_cfg['language'] == 'en' else ''
+
+        if 'O' in all_labels:
+            all_labels.remove('O')
+        if k_shot != 0:
+            support_set_info = anno_cfg['support_set_info']
+            support_set_dir = support_set_info['dir']
+            k_shot_file = os.path.join(support_set_dir, f'train_support_set_{k_shot}_shot.jsonl')
+            k_shot_data = load_dataset("json", data_files=k_shot_file)['train']  # default split is 'train'
+            prompt_template = anno_cfg['prompt_template']
+            for data_id in kwargs['dataset_ids']:
+                line = k_shot_data[data_id]
+                # line like ({'ids':support_set, 'tokens': all_tokens, 'tags': all_tags, 'spans': all_spans_labels})
+                example_list = []  # examples for each test instance
+                for tokens, spans_labels in zip(line['tokens'], line['spans_labels']):
+                    sentence = '***' if kwargs['ignore_sent'] else join_character.join(tokens)
+                    output = '['
+                    label_mention_pairs = fu.get_label_mention_pairs(
+                        spans_labels,
+                        kwargs['label_mention_map_portion'],
+                        self.id2label,
+                        kwargs['label_mention_map_choice']
+                    )
+                    for start, end, entity_mention, label_id in label_mention_pairs:
+                        label = self.id2label[int(label_id)]
+                        output += f'("{label}", "{entity_mention}"),'
+                    output += ']'
+                    instance = prompt_template['instance_template'].format(sentence=sentence, output=output)
+                    example_list.append(instance)
+
+                index = 0
+                assert 'demo_times' in anno_cfg.keys(), "The demo_times is required for 'multi_type_prompt'. Defualt 1"
+                examples = ''  # store the examples input to context
+                for _ in range(anno_cfg['demo_times']):
+                    for instance in example_list:
+                        examples += f'{index + 1})\n{instance}\n'
+                        index += 1
+
+                chat_msg_template_list.append(
+                    self._init_chat_msg_template(examples,
+                                                 annotator_cfg=annotator_cfg,
+                                                 anno_cfg=anno_cfg,
+                                                 use_api=use_api,
+                                                 )
+                )
+        return chat_msg_template_list  # return the chat message template for each test instance
 
     def _generate_chat_msg(self, instances, annotator_cfg, anno_cfg, chat_msg_template, anno_style, dialogue_style):
         """
@@ -599,6 +680,11 @@ class Annotation(Label):
         def _generate_chat_info(instance_id, query_template, chat_msg_template, tokens):
             join_character = ' ' if anno_cfg['language'] == 'en' else ''
             sentence = join_character.join(tokens)
+            all_labels = list(self.label2id.keys())
+            if 'O' in all_labels:
+                all_labels.remove('O')
+            if anno_cfg.get('given_types_subset', False):
+                sentence += f"\ntypes subset: {', '.join(all_labels)}\n"
             chat_message = copy.deepcopy(chat_msg_template)
             query = query_template.format(sentence=sentence, output='')
             if dialogue_style == 'batch_qa':
@@ -613,6 +699,21 @@ class Annotation(Label):
             return instance_id, chat_message, sentence, query
 
         prompt_template = anno_cfg['prompt_template']
+        if anno_style == 'retrieval_fs':
+            # generate chat message using the retrieval_few_shot prompt
+            # for retrieval_fs, chat_msg_template is a list of chat message template for each test instance
+            # chat_msg_template[0] is for the instance, chat_msg_template[1] is for the second instance, and so on.
+            query_template = prompt_template['instance_template']
+            for instance_id, tokens, spans_labels, chat_msg_temp in zip(instances['id'], instances['tokens'], instances['spans_labels'], chat_msg_template):
+                chat_message = copy.deepcopy(chat_msg_temp)
+                # yield instance_id, chat_message, sentence, query
+                yield _generate_chat_info(
+                    instance_id,
+                    query_template,
+                    chat_message,
+                    tokens
+                )
+
         for instance_id, tokens, spans_labels in zip(instances['id'], instances['tokens'], instances['spans_labels']):
             match anno_style:
                 case 'single_type':
@@ -972,7 +1073,10 @@ class Annotation(Label):
             output_map = {}
             with jsonlines.open(output_file) as reader:
                 for line in reader:
-                    output_map[line['custom_id']] = line['response']['body']['choices'][0]['message']['content']
+                    try:
+                        output_map[line['custom_id']] = line['response']['body']['choices'][0]['message']['content']
+                    except Exception as e:
+                        output_map[line['custom_id']] = ''
 
             outputs = []
             for custom_id in input_ids:
@@ -1011,8 +1115,8 @@ class Annotation(Label):
             status = ""
             while status not in ["completed", "failed", "expired", "cancelled"]:
                 status = await check_job_status(batch_id)
-                await self.logger.info(f"waiting fot the batch task (id {batch_id}) complete...")
-                await asyncio.sleep(10)  # 等待10秒后再次查询状态
+                await self.logger.info(f"waiting for the batch task (id {batch_id}) complete...")
+                await asyncio.sleep(20)  # 等待10秒后再次查询状态
             # 如果任务失败,则打印错误信息并退出
             if status == "failed":
                 batch = await client.batches.retrieve(batch_id)
@@ -1046,13 +1150,16 @@ class Annotation(Label):
             1) dataset_name, the name of the dataset
             2) eval, whether to evaluate the annotation quality for each annotator
             3) cache, whether to cache the annotation results
-            4) prompt_type, the type of the prompt, including single_type, mt_fs, and so on
-            5) seed, the random seed
+            4) prompt_type, the type of the prompt, including st_fs, mt_fs, sc_fs, self_cons, retrieval_fs
+            5) seed, the random seed to select the support set when using few-shot prompt
             6) concurrency_level: the concurrency level of the annotator
         :return:
         """
 
         dataset_name = kwargs['dataset_name']
+        # 为每个任务使用独立的 anno_cfg 副本，避免并发修改导致的相互覆盖
+        anno_cfg = copy.deepcopy(anno_cfg)
+
         # 0. Some settings
         # 0.1 get cache dir for result
         annotate_flag = True  # whether to annotate the dataset from scratch
@@ -1064,10 +1171,13 @@ class Annotation(Label):
         # 0.1.2 label description dir
         label_des_dir = '{}_description'.format(anno_cfg['des_format'])
 
-        if kwargs['prompt_type'] == 'sb_fs' or kwargs['prompt_type'] == 'sc_fs':
+        if kwargs['prompt_type'] == 'sc_fs':
             subset_size = '-size_{}'.format(anno_cfg['subset_size'])
             repeat_num = '-rep_{}'.format(anno_cfg['repeat_num'])
-            prompt_type_dir = os.path.join(kwargs['prompt_type'], '{}{}{}'.format(kwargs['prompt_type'], subset_size, repeat_num))
+            if anno_cfg['given_types_subset']:
+                prompt_type_dir = os.path.join('sc_fs_given_subset', '{}{}{}'.format(kwargs['prompt_type'], subset_size, repeat_num))
+            else:
+                prompt_type_dir = os.path.join('sc_fs', '{}{}{}'.format(kwargs['prompt_type'], subset_size, repeat_num))
         elif kwargs['prompt_type'] == 'mt_fs':
             demo_times = 'rep_{}'.format(anno_cfg['demo_times'])
             prompt_type_dir = os.path.join(kwargs['prompt_type'], demo_times)
@@ -1099,21 +1209,6 @@ class Annotation(Label):
             annotator_name += '-{}'.format(kwargs['seed'])
         anno_cfg['annotator_name'] = annotator_name
 
-        # task dir for this annotation
-        task_dir = os.path.join(label_format_dir, prompt_type_dir, label_des_dir, sub_samp_dir, dialogue_style_dir, model_name)
-        anno_cfg['task_dir'] = task_dir
-        res_cache_dir = os.path.join(cache_dir, task_dir, annotator_name)
-        await self.logger.info(f'result cache dir: {res_cache_dir}')
-
-        try:
-            await self.logger.info(f'Trying to load cache file from {res_cache_dir}')
-            cache_result = load_from_disk(res_cache_dir)
-            annotate_flag = False
-        except FileNotFoundError:
-            await self.logger.info(f'No cache file found in {res_cache_dir}')
-            if not os.path.exists(res_cache_dir):
-                os.makedirs(res_cache_dir)
-
         # 0.2 annotation style setting
         anno_style = kwargs['prompt_type'].split('_')[0]
         match anno_style:
@@ -1127,6 +1222,25 @@ class Annotation(Label):
                 anno_style = 'subset_cand'
             case 'self':
                 anno_style = 'self_consistency'
+            case 'retrieval':  # multi_type prompt with retrieval few-shhot
+                anno_style = 'retrieval_fs'
+
+        # task dir for this annotation
+        task_dir = os.path.join(label_format_dir, prompt_type_dir, label_des_dir, sub_samp_dir, dialogue_style_dir, model_name)
+        if anno_style == 'retrieval_fs':
+            task_dir = os.path.join(task_dir, 'retrieval_{}'.format(anno_cfg['retrieval_base_size']))
+        anno_cfg['task_dir'] = task_dir
+        res_cache_dir = os.path.join(cache_dir, task_dir, annotator_name)
+        await self.logger.info(f'result cache dir: {res_cache_dir}')
+
+        try:
+            await self.logger.info(f'Trying to load cache file from {res_cache_dir}')
+            cache_result = load_from_disk(res_cache_dir)
+            annotate_flag = False
+        except FileNotFoundError:
+            await self.logger.info(f'No cache file found in {res_cache_dir}')
+            if not os.path.exists(res_cache_dir):
+                os.makedirs(res_cache_dir)
 
         # 0.3 other parameters to evaluate effieciency (only work for batch_qa with local annotator)
         prompt_lens_all = []
@@ -1146,6 +1260,7 @@ class Annotation(Label):
                 'subset_type': self._subset_type_fs_msg,
                 'subset_cand': self._subset_cand_fs_msg,
                 'self_consistency': self._self_cons_fs_msg,
+                'retrieval_fs': self._retrieval_fs_msg,
             }
 
             if anno_cfg.get('k_shot', -1) >= 0:
@@ -1157,12 +1272,14 @@ class Annotation(Label):
                     ignore_sent=anno_cfg['ignore_sent'],
                     label_mention_map_portion=anno_cfg['label_mention_map_portion'],
                     label_mention_map_choice=anno_cfg['label_mention_map_choice'],
-                    dataset_name=dataset_name
+                    dataset_name=dataset_name,
+                    seed=kwargs['seed'],
+                    dataset_ids=dataset['id'] if kwargs['prompt_type'] == 'retrieval_fs' else None
                 )
 
             # 2. batch process
             # 2.1 yield batch data
-            if len(chat_msg_template) > 1:
+            if len(chat_msg_template) > 1 and anno_style != 'retrieval_fs':
                 # when we use subset type prompt or single type prompt, chat_msg_template is a list of chat message template
                 # we set the batch size to the number of label subsets
                 # As a result, we can process one instance for each label subset in one batch
@@ -1242,14 +1359,14 @@ class Annotation(Label):
                             )
                         )
                     outputs = await tqdm_asyncio.gather(
-                        *tasks, desc=f'annotating by {annotator_name}, dataset {dataset_name}'
+                        *tasks, desc=f"annotating by {annotator_name}, dataset {dataset_name}, prompt_type {kwargs['prompt_type']}"
                     )
                 else:
                     # use local annotator and batch_qa
                     # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
                     for batch_chats in tqdm(
                             fu.batched(all_chat_messagges, batch_size),
-                            desc=f'annotating by {annotator_name}, dataset {dataset_name}'
+                            desc=f"annotating by {annotator_name}, dataset {dataset_name}, prompt_type {kwargs['prompt_type']}"
                     ):
                         templated_batch_chats = self.annotator.anno_tokenizer.apply_chat_template(
                             batch_chats, add_generation_prompt=True,tokenize=False
@@ -1281,7 +1398,7 @@ class Annotation(Label):
             elif not self.annotator.batch_infer and anno_cfg['dialogue_style'] == 'multi_qa':
                 for batch in tqdm(
                     fu.batched(zip(all_instance_ids, all_chat_messagges, all_sententes, all_queries), batch_size),
-                    desc=f'annotating by {annotator_name}, dataset {dataset_name}'
+                    desc=f'annotating by {annotator_name}, dataset {dataset_name}, prompt_type {kwargs['prompt_type']}'
                 ):
                     multi_qa_chat = []  # store chat context for this batch
                     for idx, (instance_id, chat, sent, query) in enumerate(batch):
@@ -1483,13 +1600,14 @@ class Annotation(Label):
                 task_dir=task_dir,
                 anno_style=anno_style,
                 prompt_type=kwargs['prompt_type'],
-                efficiency_paras=efficiency_paras
+                efficiency_paras=efficiency_paras,
+                seed=kwargs['seed'],
             )
 
         # annotator_name is the name of the annotator
         # task_dir is the directory of the task
         # return both of them to get the res_file
-        return res_file, copy.deepcopy(anno_cfg)
+        return res_file, anno_cfg
 
     def evaluate(self, y_true, y_pred, anno_cfg, **kwargs):
         """
@@ -1505,6 +1623,7 @@ class Annotation(Label):
             4) task_dir, the directory of the task
             5) prompt_type, the type of the prompt, including single_type, mt_fs, raw, and so on
             6) efficiency_paras, the efficiency parameters, including prompt_avg_len, avg_time_per_batch, avg_time_per_ins
+            7) seed, the random seed to select the support set when using few-shot prompt
         :return:
         """
         eval_dir = anno_cfg['eval_dir'].format(dataset_name=kwargs['dataset_name'])
@@ -1521,12 +1640,12 @@ class Annotation(Label):
         df_metrics = fu.compute_span_f1_by_labels(copy.deepcopy(y_true), copy.deepcopy(y_pred), id2label=self.id2label, res_file=res_by_class_file)
         self.logger.info(f"===== Metrics for each label =====\n{df_metrics}")
 
-        if anno_cfg['k_shot'] > 0:  # LSPI and LC are only available for few-shot setting
+        if anno_cfg['k_shot'] > 0 and kwargs['prompt_type'] != 'retrieval_fs':  # LSPI and LC are only available for few-shot setting
             lspi, lc, lm_beta = self.get_label_measure(
                 kwargs['dataset'],
                 anno_cfg,
-                kwargs['dataset_name'],
-                prompt_type=kwargs['prompt_type']
+                prompt_type=kwargs['prompt_type'],
+                seed=kwargs['seed'],
             )
             eval_results['lspi'] = lspi
             eval_results['lc'] = lc
@@ -1543,14 +1662,14 @@ class Annotation(Label):
                     f.write(f'{metric}: {res}\n')
         return res_file
 
-    def get_label_measure(self, test_dataset, anno_cfg, dataset_name, prompt_type='sc_fs', beta=1):
+    def get_label_measure(self, test_dataset, anno_cfg, prompt_type='sc_fs', beta=1, seed=42):
         """
         get the label space per instance and label coverage
         :param test_dataset: dataset used to be evaluated
         :param anno_cfg: the configuration of the annotation settings
-        :param dataset_name: the name of the dataset
         :param prompt_type: the type of the prompt, including sc_fs, mt_fs
         :param beta: the weight for lspi, lc. lm_beta = (1+b^2)*LSPI*LC/(b^2*LSPI+LC)
+        :param seed: the random seed to select the support set when using few-shot prompt
         :return:
         """
         all_labels = list(self.label2id.keys())
@@ -1564,8 +1683,12 @@ class Annotation(Label):
 
         if k_shot != 0:
             # get the support set file
-            anno_cfg['support_set_dir'] = anno_cfg['support_set_dir'].format(dataset_name=dataset_name)
-            k_shot_file = os.path.join(anno_cfg['support_set_dir'], f'span_{self.natural_flag}', f'train_support_set_{k_shot}_shot.jsonl')
+            support_set_info = anno_cfg['support_set_info']
+            support_set_dir = support_set_info['dir']
+            if prompt_type != 'retrieval_fs':
+                k_shot_file = os.path.join(support_set_dir, f'train_support_set_{k_shot}_shot_{seed}.jsonl')
+            else:
+                k_shot_file = os.path.join(support_set_dir, f'train_support_set_{k_shot}_shot.jsonl')
 
             # get the label sets from demonstration
             match prompt_type:

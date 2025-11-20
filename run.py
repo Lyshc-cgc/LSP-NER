@@ -8,17 +8,19 @@ import module.func_util as fu
 from module import Annotation, Processor, Annotator
 
 # 'ontonotes5_zh'
-# 'conll2003',
 # 'ontonotes5_en',
 # 'mit_restaurant',
 # 'mit_movies'
 # 'CMeEE_V2'
-dataset_names = ['ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh']  # 'ontonotes5_en', 'mit_movies',
+dataset_names = ['ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh']  # 'ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh'
 use_api = True
 api_model = 'gpt'  # 'qwen', 'deepseek', 'glm', 'gpt'
 local_model = 'Qwen1.5'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
-seeds = [22, 32, 42]
-test_subset_size = 200
+method='retrieval'  # 'lsp', 'retrieval'
+
+seeds = [22]  # retrieval-based时 只需要一个seed
+test_subset_size = 300
+retrieval_base_size = -1  # number of training data used for k-shot sampling or retrieval setting
 concurrency_level = 10  # number of concurrent requests
 
 async def main():
@@ -47,7 +49,8 @@ async def main():
         data_cfg = fu.get_config(config['data_cfgs'][dataset_name])  # data config
         labels_cfg = fu.get_config(config['label_cfgs'][dataset_name])  # label config
         proc = Processor(data_cfg, labels_cfg, natural_form)
-        dataset = proc.process()
+        dataset, support_set_info = proc.process(method=method, retrieval_base_size=retrieval_base_size)
+        dataset_subset = dataset.shuffle(seed=42).flatten_indices().select(range(test_subset_size))  # fixed test subset for all experiments
         language = data_cfg['language']  # language of the dataset
 
         # 3. annotate the data by LLMs
@@ -67,17 +70,20 @@ async def main():
 
         # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
-        for prompt_type in ['mt_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons'
-            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons')
+        for prompt_type in ['mt_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp'
+            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp')
 
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
                 await logger.error('multi_qa style only support mt_fs')
                 dialogue_style = 'batch_qa'
             if dialogue_style == 'multi_qa' and use_api and annotator.batch_infer:
-                await logger.error('batch_qa style cannot support batch inference using API')
-                annotator.batch_infer = False  # set batch_infer to False for batch_qa
-
+                await logger.error('multi_qa style cannot support batch inference using API')
+                annotator.batch_infer = False  # set batch_infer to False for multi_qa
+            if method == 'retrieval' and prompt_type not in ('retrieval_fs', 'retrieval_lsp'):
+                await logger.error('retrieval-based processingg only support retrieval_fs ')
+                return
             # 3.4 other testing settings
+
             if prompt_type == 'sc_fs':
                 subset_sizes = [0.1, 0.2, 0.3, 0.4, 0.5] # label subset sizes for sc_fs
             else:
@@ -93,7 +99,7 @@ async def main():
             anno_cfgs = [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
 
             # 5. start annotation
-            results = []  # for storing the results with different cfg and seeds
+            results = []  # for storing the results with different cfg and seeds (seeds are used to sample k-shot examples)
             for ignore_sent, label_mention_map_portions in zip(ignore_sent_set, label_mention_map_portions_set):
                 for label_mention_map_portion in label_mention_map_portions:
                     for subset_size in subset_sizes:
@@ -112,15 +118,19 @@ async def main():
                                 await logger.info(f'label-mention map portion: {label_mention_map_portion}')
                                 await logger.info(f'label_mention_map_choice: {label_mention_map_choice}')
 
-                                if prompt_type == 'mt_fs':
-                                    await logger.info(f'demo_times: {rep_num + 1}')
-                                elif prompt_type == 'sc_fs':
-                                    await logger.info(f'repeat num: {rep_num + 1}')
-                                elif prompt_type == 'self_cons':
-                                    # if we use self-consistency,
-                                    # we need to set the temperature, top_p, num_return_sequences manually before init annotator
-                                    anno.annotator.annotator_cfg['anno_temperature'] = anno_cfg['temperature']
-                                    anno.annotator.annotator_cfg['anno_top_p'] = anno_cfg['top_p']
+                                match prompt_type:
+                                    case 'mt_fs':
+                                        await logger.info(f'demo_times: {rep_num + 1}')
+                                    case 'sc_fs':
+                                        await logger.info(f'repeat num: {rep_num + 1}')
+                                    case 'self_cons':
+                                        # if we use self-consistency,
+                                        # we need to set the temperature, top_p, num_return_sequences manually before init annotator
+                                        anno.annotator.annotator_cfg['anno_temperature'] = anno_cfg['temperature']
+                                        anno.annotator.annotator_cfg['anno_top_p'] = anno_cfg['top_p']
+                                    case 'retrieval_fs' | 'retrieval_lsp':
+                                        anno_cfg['retrieval_base_size'] = retrieval_base_size
+                                anno_cfg['support_set_info'] = support_set_info
                                 anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
                                 anno_cfg['language'] = language
                                 anno_cfg['repeat_num'] = rep_num + 1  # for sc_fs
@@ -132,20 +142,9 @@ async def main():
                                 anno_cfg['dialogue_style'] = dialogue_style
                                 anno_cfg['sampling_strategy'] = sampling_strategy
 
-                                # 3. run the annotation with the given seed
+                                # 3. run the annotation with the given seed (seed for sampling k-shot examples)
                                 tasks = []
                                 for seed in seeds:
-                                    if test_subset_size > 0:
-                                        loop = asyncio.get_running_loop()
-                                        dataset_subset = await loop.run_in_executor(
-                                            None,
-                                            proc.subset_sampling,
-                                            dataset,
-                                            test_subset_size,
-                                            sampling_strategy,
-                                            seed
-                                        )
-
                                     await logger.info(f"anno cfg: {anno_cfg['name']}")
                                     tasks.append(
                                         anno.annotate_by_one(dataset_subset,
@@ -174,6 +173,7 @@ async def main():
                     if not os.path.exists(res_cache_dir):
                         os.makedirs(res_cache_dir)
                     res_file = os.path.join(res_cache_dir, '{}_res.txt'.format(anno_cfg['annotator_name']))
+                    print(f'res_file not found, set to {res_file}')
 
                 logger.info(f'write metrics ({res_file}) to excel file {excel_file}')
                 start_row = fu.write_metrics_to_excel(

@@ -13,14 +13,15 @@ task_prompt:
   batch_qa: >-
     Identify the entities and recognize their types in the sentence.
     The output should be a string in the format of the tuple list,  like'[(type 0, entity 0), (type 1, entity 1), ...]'.
-
+  batch_qa_subset: >-
+    Given a types subset, you should identify the entities belonging to the types subset and recognize their types in the sentence.
+    The output should be a string in the format of the tuple list,  like'[(type 0, entity 0), (type 1, entity 1), ...]'.
 types_prompt: True
 instance_template:
   multi_qa: >-
     instruction: Given types ({subset_types}). You should identify these types of entities in the sentence.
       The output should be a string in the format of the tuple list,  like'[(type 0, entity 0), (type 1, entity 1), ...]'.
     sentence: "{sentence}"
-    
     output: {output}
   batch_qa: >-
     sentence: "{sentence}"

@@ -15,5 +15,4 @@ task_prompt: >-
 types_prompt: True
 instance_template: >-
   sentence: "{sentence}"
-  
   output: {output}

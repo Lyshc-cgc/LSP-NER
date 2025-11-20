@@ -1,13 +1,15 @@
 import os
 import copy
 import random
-import math
+import numpy as np
+import faiss
 import jsonlines
 
 from tqdm import tqdm
 from datasets import load_dataset, load_from_disk, Dataset
 import module.func_util as fu
-from module.label import Label
+from .label import Label
+from .simcse import SimCSE
 
 class Processor(Label):
     """
@@ -24,6 +26,15 @@ class Processor(Label):
         self.config = data_cfg
         self.natural_flag = 'natural' if natural_form else 'bio'  # use natural-form or bio-form
         self.logger = fu.get_sync_logger()  # use sync logger for data processing
+        self.sim_model = None
+
+    def _init_sim_model(self, sim_path='../model/princeton-nlp/sup-simcse-roberta-large'):
+        """
+        Initialize the SimCSE model for retrieval-based support set sampling.
+        :return:
+        """
+        if self.sim_model is None:
+            self.sim_model = SimCSE(sim_path)
 
     def _get_span_and_tags(self, tokens, tags, language='en'):
         """
@@ -235,7 +246,7 @@ class Processor(Label):
             'label_indices': label_indices
         }
 
-    def support_set_sampling(self, dataset, k_shot=1, sample_split='train'):
+    def support_set_sampling(self, dataset, k_shot=1, sample_split='train', seed=None):
         """
         Sample k-shot support set from the dataset split.
         The sampled support set contains at least K examples for each of the labels.
@@ -245,6 +256,7 @@ class Processor(Label):
         :param dataset: The dataset to be sampled.
         :param k_shot: The shot number of the support set.
         :param sample_split: The dataset split you want to sample from.
+        :param seed: The base seed for random sampling. If None, a random seed will be used.
         :return: the support set containing k-shot index of examples for each of the labels.
         """
         def _update_counter(support_set, raw_counter):
@@ -291,10 +303,12 @@ class Processor(Label):
             candidate_idx.update({label: tmp_ins})
 
         # 2. sample
-        self.logger.info(f"Sampling {k_shot}-shot support set from {sample_split} split...")
+        self.logger.info(f"Sampling {k_shot}-shot support set from {sample_split} split with seed {seed}...")
         for label in label_nums.keys():
             self.logger.info(f'Sampling {label} support set...')
             while counter[label] < k_shot:
+                current_seed = seed if seed is not None else random.randint(0, 512)
+                random.seed(current_seed)
                 idxs = random.sample(candidate_idx[label], k=k_shot-counter[label])
                 support_set.update(idxs)
                 counter = _update_counter(support_set, counter)
@@ -314,58 +328,101 @@ class Processor(Label):
         counter = _update_counter(support_set, counter)
         return support_set, counter
 
-    def subset_sampling(self, dataset: Dataset, size=200, sampling_strategy='random', seed=None):
+    def retrival_support_set(self, dataset, k_shot, cache_dir, retrieval_base_size=-1, seed=None):
         """
-        Get the subset of the dataset according to sampling sampling_strategy.
-        :param dataset: the dataset to be sampled to get subset.
-        :param size: the size of the test subset.
-        :param sampling_strategy: the sampling strategy.
-            1) 'random' for random sampling. Select instances randomly. Each instance has the same probability of being selected.
-            2) 'lab_uniform' for uniform sampling at label-level. Choice probability is uniform for each label.
-            3) 'proportion' for proportion sampling. Choice probability is proportional to the number of entities for each label.
-            4) 'shot_sample' for sampling test set like k-shot sampling. Each label has at least k instances.
-        :param seed: the seed for random sampling. If None, a random seed will be used.
+        Retrieve top-k nearest neighbors for each test instance from the train dataset.
+
+        :param dataset: The dataset containing 'train' and 'test' splits.
+        :param k_shot: The number of nearest neighbors to retrieve.
+        :param cache_dir: The directory to cache the computed embeddings.
+        :param retrieval_base_size: The number of samples to randomly select from the train set for retrieval. If -1, use the entire train set.
+        :param seed: The random seed for selecting the subset of the train set.
+        :return: A list of indices representing the top-k nearest neighbors for each test instance.
+        """
+
+        # Define cache file paths
+        train_cache_file = os.path.join(cache_dir, "train_embeddings.npy")
+        test_cache_file = os.path.join(cache_dir, "test_embeddings.npy")
+        join_character = ' ' if self.config['language'] == 'en' else ''
+
+        # Load or compute train embeddings
+        if os.path.exists(train_cache_file):
+            train_embeddings = np.load(train_cache_file)
+        else:
+            train_sentences = [join_character.join(tokens) for tokens in dataset['train']['tokens']]
+            train_embeddings = self.sim_model.encode(
+                train_sentences,
+                batch_size=256,
+                normalize_to_unit=True,
+                return_numpy=True
+            )
+            np.save(train_cache_file, train_embeddings)
+
+        # If train_data_size is specified, randomly sample a subset of the train set
+        if retrieval_base_size != -1:
+            # if seed is not None:
+            #     np.random.seed(seed)
+            sample_indices = np.random.choice(train_embeddings.shape[0], retrieval_base_size, replace=False)
+            train_embeddings = train_embeddings[sample_indices]
+            train_subset = dataset['train'].select(sample_indices)
+        else:
+            train_subset = dataset['train']
+
+        # Load or compute test embeddings
+        if os.path.exists(test_cache_file):
+            test_embeddings = np.load(test_cache_file)
+        else:
+            # self.config['split'] is the test or validation split
+            test_sentences = [join_character.join(tokens) for tokens in dataset[self.config['split']]['tokens']]
+            test_embeddings = self.sim_model.encode(
+                test_sentences,
+                batch_size=256,
+                normalize_to_unit=True,
+                return_numpy=True
+            )
+            np.save(test_cache_file, test_embeddings)
+
+        # Build FAISS index for train embeddings
+        # Build FAISS index for train embeddings (use GPU if available)
+        train_embeddings = train_embeddings.astype('float32')
+        test_embeddings = test_embeddings.astype('float32')
+        cpu_index = faiss.IndexFlatIP(train_embeddings.shape[1])
+        cpu_index.add(train_embeddings)
+
+        try:
+            # 初始化 GPU 资源并将 CPU 索引拷贝到 GPU（device 0）
+            res = faiss.StandardGpuResources()
+            gpu_index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
+            index = gpu_index
+            self.logger.info("Using FAISS GPU index on device 0")
+        except Exception as e:
+            index = cpu_index
+            self.logger.warning(f"FAISS GPU not available, using CPU index: {e}")
+
+        # Retrieve top-k nearest neighbors for each test instance
+        self.logger.info(f"Retrieving {k_shot} nearest neighbors for test instances...")
+        _, knn_indices = index.search(test_embeddings, k_shot)  # 乘4，保证demonstration的数量级一致
+        self.logger.info("Retrieval completed.")
+
+        # Map knn_indices back to the original dataset if size is specified
+        # meanwhile, we convert numpy.int64 to int
+        if retrieval_base_size != -1:
+            knn_indices = [[int(sample_indices[int(idx)]) for idx in knn] for knn in knn_indices]
+        else:
+            knn_indices = [[int(idx) for idx in knn] for knn in knn_indices]
+        return knn_indices
+
+
+    def process(self, method = 'lsp', **kwargs):
+        """
+        Process the dataset.
+        :param method: the method tot be evaluated. 'lsp' for label subset partition. 'retrieval' for retrieval-based method.
+        :param kwargs: 用于'retrieval'方法的其他参数，例如
+            1) retrieval_base_size: 检索的训练集大小。如果为-1，表示从整个训练集中检索支持集。
         :return:
         """
-        assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample')
+        assert method in ('lsp', 'retrieval')
 
-        if sampling_strategy == 'random':
-            if not seed or isinstance(seed, str):
-                seed = random.randint(0, 512)
-            self.logger.info(f"Random sampling with seed {seed}...")
-            # https://huggingface.co/docs/datasets/process#shuffle
-            # use Dataset.flatten_indices() to rewrite the entire dataset on your disk again to remove the indices mapping
-            dataset_subset = dataset.shuffle(seed=seed).flatten_indices().select(range(size))
-
-        elif sampling_strategy == 'proportion':
-            statistics_res = self.statistics(dataset)
-            label_dist,  label_indices= statistics_res['label_dist'], statistics_res['label_indices']
-            choice_indices = []
-            for label, proportion in label_dist.items():
-                choice_num = math.ceil(proportion * size)
-                choice_indices += random.sample(label_indices[label], choice_num)
-
-            choice_indices = list(set(choice_indices))
-            dataset_subset = dataset.select(choice_indices)
-
-        elif sampling_strategy == 'lab_uniform':
-            label_num = len(self.label2id.keys()) - 1  # exclude 'O' label
-            statistics_res = self.statistics(dataset)
-            label_indices = statistics_res['label_indices']
-            choice_indices = []
-            for label, indices in label_indices.items():
-                choice_num = math.ceil(size / label_num)
-                choice_indices += random.sample(indices, choice_num)
-            choice_indices = list(set(choice_indices))
-            dataset_subset = dataset.select(choice_indices)
-
-        elif sampling_strategy == 'shot_sample':
-            support_set, counter = self.support_set_sampling(dataset, k_shot=20, sample_split='train')
-            dataset_subset = dataset.select(list(support_set))
-
-        return dataset_subset
-
-    def process(self):
         # 0. init config
         self.config['preprocessed_dir'] = self.config['preprocessed_dir'].format(dataset_name=self.config['dataset_name'])
         self.config['continue_dir'] = self.config['continue_dir'].format(dataset_name=self.config['dataset_name'])
@@ -378,7 +435,19 @@ class Processor(Label):
 
         # with_rank is used to determine whether to assign a value to the rank parameter in the map function
         continue_dir = os.path.join(self.config['continue_dir'], f'span_{self.natural_flag}')  # the directory to store the continued data to be annotated
-        ss_cache_dir = os.path.join(self.config['ss_cache_dir'], f'span_{self.natural_flag}')  # the directory to cache the support set
+
+        # the directory to cache the support set
+        # 不同的方法使用不同的support set
+        # 对于lsp方法，support set直接从train split中采样，采样得到的support set被放到一个jsonl文件中，测试集所有样本共享同一个support set
+        # 对于retrival方法，利用向量相似度为测试集每个样本检索support set，jsonl文件中存储每个测试样本对应的support set的下标
+        method_name = method
+        if method == 'retrieval':
+            retrieval_base_size = kwargs.get('retrieval_base_size', -1)
+            if retrieval_base_size == -1:
+                method_name = method + "_full"
+            else:
+                method_name = method + f"_{retrieval_base_size}"
+        ss_cache_dir = os.path.join(self.config['ss_cache_dir'], f'span_{self.natural_flag}', method_name)
 
         # 1. check and load the cached formatted dataset
         try:
@@ -410,40 +479,85 @@ class Processor(Label):
             preprocessed_dataset.save_to_disk(preprocessed_dir)
 
         # 3. sample the support set
+        support_set_info = None
         if self.config['support_set']:
             if not os.path.exists(ss_cache_dir):
                 os.makedirs(ss_cache_dir)
 
+            if method == 'retrieval':
+                self._init_sim_model()  # initialize the SimCSE model for retrieval-based support set sampling
+
             for k_shot in self.config['k_shot']:
-                cache_ss_file_name = '{}_support_set_{}_shot.jsonl'.format(self.config['sample_split'], k_shot)
-                cache_counter_file_name = '{}_counter_{}_shot.txt'.format(self.config['sample_split'], k_shot)
-                support_set_file = os.path.join(ss_cache_dir, cache_ss_file_name)
-                counter_file = os.path.join(ss_cache_dir, cache_counter_file_name)
+                for seed in self.config['seed']:
+                    cache_ss_file_name = '{}_support_set_{}_shot_{}.jsonl'.format(self.config['sample_split'], k_shot, seed)
+                    cache_counter_file_name = '{}_counter_{}_shot_{}.txt'.format(self.config['sample_split'], k_shot, seed)
+                    if method == 'retrieval':
+                        cache_ss_file_name = '{}_support_set_{}_shot.jsonl'.format(self.config['sample_split'], k_shot)
+                        cache_counter_file_name = '{}_counters_{}_shot.txt'.format(self.config['sample_split'], k_shot)
+                    support_set_file = os.path.join(ss_cache_dir, cache_ss_file_name)
+                    counter_file = os.path.join(ss_cache_dir, cache_counter_file_name)
 
-                # check and load the cache
-                if not os.path.exists(support_set_file):
-                # 3.2 sample support set from scratch
+                    # check and load the cache
+                    if not os.path.exists(support_set_file):
+                    # 3.2 sample support set from scratch
+                        self.logger.info(f'{support_set_file} does not exist, start to sample the support set...')
+                        if method == 'retrieval':
+                            support_sets = self.retrival_support_set(
+                                preprocessed_dataset,
+                                k_shot,
+                                ss_cache_dir,
+                                retrieval_base_size,
+                                seed,
+                            )  # support set for each test instance
 
-                    support_set, counter = self.support_set_sampling(preprocessed_dataset, k_shot, self.config['sample_split'])
-                    # cache the support set
-                    with jsonlines.open(support_set_file, mode='w') as writer:
-                        for idx in support_set:
-                            tokens = preprocessed_dataset[self.config['sample_split']]['tokens'][idx]
-                            tags = preprocessed_dataset[self.config['sample_split']]['tags'][idx]
-                            spans_labels = preprocessed_dataset[self.config['sample_split']]['spans_labels'][idx]
-                            writer.write({'id': idx, 'tokens': tokens, 'tags': tags, 'spans_labels': spans_labels})
+                            # cace the support set
+                            dir_path = os.path.dirname(support_set_file)
+                            if dir_path and not os.path.exists(dir_path):
+                                os.makedirs(dir_path)
+                            with jsonlines.open(support_set_file, mode='w') as writer:
 
-                    # cache the counter
-                    with open(counter_file, 'w') as writer:
-                        for k, v in counter.items():
-                            writer.write(f'{k}: {v}\n')
+                                for support_set in support_sets:
+                                    all_tokens, all_tags, all_spans_labels = [], [], []
+                                    for idx in support_set:
+                                        tokens = preprocessed_dataset[self.config['sample_split']]['tokens'][idx]
+                                        tags = preprocessed_dataset[self.config['sample_split']]['tags'][idx]
+                                        spans_labels =  preprocessed_dataset[self.config['sample_split']]['spans_labels'][idx]
+                                        all_tokens.append(tokens)
+                                        all_tags.append(tags)
+                                        all_spans_labels.append(spans_labels)
+                                    ids = [int(i) for i in support_set]
+                                    writer.write({'ids':ids, 'tokens': all_tokens, 'tags': all_tags, 'spans_labels': all_spans_labels})
+                        else:
+                            support_set, counter = self.support_set_sampling(
+                                preprocessed_dataset,
+                                k_shot,
+                                self.config['sample_split'],
+                                seed,
+                            )
+                            # cache the support set
+                            with jsonlines.open(support_set_file, mode='w') as writer:
+                                for idx in support_set:
+                                    tokens = preprocessed_dataset[self.config['sample_split']]['tokens'][idx]
+                                    tags = preprocessed_dataset[self.config['sample_split']]['tags'][idx]
+                                    spans_labels = preprocessed_dataset[self.config['sample_split']]['spans_labels'][idx]
+                                    writer.write({'id': int(idx), 'tokens': tokens, 'tags': tags, 'spans_labels': spans_labels})
+
+                            # cache the counter
+                            with open(counter_file, 'w') as writer:
+                                for k, v in counter.items():
+                                    writer.write(f'{k}: {v}\n')
+
+            support_set_info = {
+                'dir': ss_cache_dir,
+                'base_size': kwargs.get('size', -1)
+            }
 
         # 4. shuffle, split and then save the formatted dataset
         # 4.1 check the cached result
         if self.config['continue']:
             try:
                 dataset = load_from_disk(continue_dir)
-                return dataset
+                return dataset, support_set_info
             except FileNotFoundError:
                 dataset = None
 
@@ -457,4 +571,6 @@ class Processor(Label):
 
         dataset.save_to_disk(continue_dir)
 
-        return dataset
+        # support_set informationz
+
+        return dataset, support_set_info

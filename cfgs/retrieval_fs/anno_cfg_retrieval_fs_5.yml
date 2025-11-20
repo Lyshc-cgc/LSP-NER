@@ -1,12 +1,10 @@
 # Attention! ALL paths must be relative to the 'config.yml' file!
-name: sc-5-shot # the name of the configuration
+name: retrieval-fs-5-shot # the name of the configuration
 setting_parent_dir: data/{dataset_name}  # parent directory of the dataset
 cache_dir: data/{dataset_name}/anno_res  # cache directory
 eval_dir: data/{dataset_name}/eval  # evaluation results file dir
 support_set_dir: data/{dataset_name}/support_set  # support set directory
 k_shot: 5  # set more than 0 if use few-shot setting. Else, set 0 if not use few-shot setting.
 des_format: simple  # type description format , 'simple' for simple description, 'full' for full description, 'empty' for no description
-subset_size: 0.5  # the number of types in the subset. you can set between 0 and 1 , or set an integer number.
-repeat_num: 5  # the number of times to repeat each label.  Default is 1.
-prompt_template_dir: cfgs/subset_cand/prompt_template.yml  # prompt template file
-given_types_subset: False  # whether to give the types subset in the demonstrations
+demo_times: 1  # the number of times to repeat each demonstration. default 1
+prompt_template_dir: cfgs/retrieval_fs/prompt_template.yml  # prompt template file

@@ -19,6 +19,10 @@ continue: True  # whether to continue to use the data last time
 continue_dir: data/{dataset_name}/continue  # the directory to store the continued data to be annotated
 
 support_set: True  # whether to sample support set
+seed:  # random seed for sampling support set
+  - 22
+  - 32
+  - 42
 k_shot:  # the number of examples for each label in the training set
   - 7
   - 5
