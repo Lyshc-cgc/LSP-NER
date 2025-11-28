@@ -2,10 +2,10 @@
 
 qwen:
   base_url: https://dashscope.aliyuncs.com/compatible-mode/v1  # or use VLLM server
-  model: qwen2.5-72b-instruct # qwen-long, qwen-plus
+  model: qwen1.5-32b-chat # qwen-long, qwen-plus, qwen1.5-32b-chat
   api_key: DASHSCOPE_API_KEY  # the os environment variable name
-  batch_infer: True  # whether to use the batch inference
-  concurrency_level: 10 # the concurrency level for api request
+  batch_infer: False  # whether to use the batch inference
+  concurrency_level: 1 # the concurrency level for api request
 
 #deepseek:
 #  base_url: https://api.deepseek.com/v1

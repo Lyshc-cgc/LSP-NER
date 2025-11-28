@@ -12,7 +12,7 @@ from module import Annotation, Processor, Annotator
 # 'mit_restaurant',
 # 'mit_movies'
 # 'CMeEE_V2'
-dataset_names = ['ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh']  # 'ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh'
+dataset_names = ['ontonotes5_en']  # 'ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh'
 use_api = True
 api_model = 'gpt'  # 'qwen', 'deepseek', 'glm', 'gpt'
 local_model = 'Qwen1.5'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
@@ -20,7 +20,7 @@ method='retrieval'  # 'lsp', 'retrieval'
 
 seeds = [22]  # retrieval-based时 只需要一个seed
 test_subset_size = 300
-retrieval_base_size = -1  # number of training data used for k-shot sampling or retrieval setting
+retrieval_base_size = 20  # number of training data used for k-shot sampling or retrieval setting
 concurrency_level = 10  # number of concurrent requests
 
 async def main():
@@ -70,7 +70,7 @@ async def main():
 
         # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
-        for prompt_type in ['mt_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp'
+        for prompt_type in ['retrieval_lsp']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp'
             assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp')
 
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
@@ -146,7 +146,7 @@ async def main():
                                 tasks = []
                                 for seed in seeds:
                                     await logger.info(f"anno cfg: {anno_cfg['name']}")
-                                    tasks.append(
+                                    task = asyncio.create_task(
                                         anno.annotate_by_one(dataset_subset,
                                                              anno_cfg=anno_cfg,
                                                              dataset_name=dataset_name,
@@ -155,8 +155,9 @@ async def main():
                                                              prompt_type=prompt_type,
                                                              seed=seed,
                                                              concurrency_level=concurrency_level,
-                                                             )
+                                        )
                                     )
+                                    tasks.append(task)
 
                                 # 4. save the results to a excel file
                                 results += await asyncio.gather(*tasks)

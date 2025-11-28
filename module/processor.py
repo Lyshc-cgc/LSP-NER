@@ -421,7 +421,7 @@ class Processor(Label):
             1) retrieval_base_size: 检索的训练集大小。如果为-1，表示从整个训练集中检索支持集。
         :return:
         """
-        assert method in ('lsp', 'retrieval')
+        assert method in ('lsp', 'retrieval', 'other')
 
         # 0. init config
         self.config['preprocessed_dir'] = self.config['preprocessed_dir'].format(dataset_name=self.config['dataset_name'])
