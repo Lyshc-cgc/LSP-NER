@@ -1,4 +1,5 @@
 import os
+import math
 import copy
 import random
 import numpy as np
@@ -327,6 +328,75 @@ class Processor(Label):
 
         counter = _update_counter(support_set, counter)
         return support_set, counter
+
+    def subset_sampling(self, dataset: Dataset, size=200, sampling_strategy='random', seed=None):
+        """
+        Get the subset of the dataset according to sampling sampling_strategy.
+        :param dataset: the dataset to be sampled to get subset.
+        :param size: the size of the test subset.
+        :param sampling_strategy: the sampling strategy.
+            1) 'random' for random sampling. Select instances randomly. Each instance has the same probability of being selected.
+            2) 'lab_uniform' for uniform sampling at label-level. Choice probability is uniform for each label.
+            3) 'proportion' for proportion sampling. Choice probability is proportional to the number of entities for each label.
+            4) 'shot_sample' for sampling test set like k-shot sampling. Each label has at least k instances.
+            5) 'mix', uniform sample if label proportions > threshold. otherwise, we obtain all.
+        :param seed: the seed for random sampling. If None, a random seed will be used.
+        :return:
+        """
+        assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample', 'mix')
+
+        match sampling_strategy:
+            case 'random':
+                if not seed or isinstance(seed, str):
+                    seed = random.randint(0, 512)
+                print(f"Random sampling with seed {seed}...")
+                # https://huggingface.co/docs/datasets/process#shuffle
+                # use Dataset.flatten_indices() to rewrite the entire dataset on your disk again to remove the indices mapping
+                dataset_subset = dataset.shuffle(seed=seed).flatten_indices().select(range(size))
+
+            case 'proportion':
+                statistics_res = self.statistics(dataset)
+                label_dist,  label_indices= statistics_res['label_dist'], statistics_res['label_indices']
+                choice_indices = []
+                for label, proportion in label_dist.items():
+                    choice_num = math.ceil(proportion * size)
+                    choice_indices += random.sample(label_indices[label], choice_num)
+
+                choice_indices = list(set(choice_indices))
+                dataset_subset = dataset.select(choice_indices)
+
+            case 'lab_uniform':
+                label_num = len(self.label2id.keys()) - 1  # exclude 'O' label
+                statistics_res = self.statistics(dataset)
+                label_indices = statistics_res['label_indices']
+                choice_indices = []
+                for label, indices in label_indices.items():
+                    choice_num = math.ceil(max(size / label_num, size * 0.1))
+                    if choice_num >= len(indices):
+                        choice_num = len(indices)
+                    choice_indices += random.sample(indices, choice_num)
+                choice_indices = list(set(choice_indices))
+                dataset_subset = dataset.select(choice_indices)
+
+            case 'shot_sample':
+                # todo, debug and cache the shot sample
+                support_set, counter = self.support_set_sampling(dataset, k_shot=20, sample_split='train')
+                dataset_subset = dataset.select(list(support_set))
+
+            case 'mix':
+                statistics_res = self.statistics(dataset)
+                label_dist, label_indices = statistics_res['label_dist'], statistics_res['label_indices']
+                choice_indices = []
+                for label, proportion in label_dist.items():
+                    if proportion < 0.01:
+                        choice_indices += label_indices[label]
+                    else:
+                        choice_num = math.ceil(size / len(label_dist))
+                        choice_indices += random.sample(label_indices[label], choice_num)
+
+                choice_indices = list(set(choice_indices))
+                dataset_subset = dataset.select(choice_indices)
+        return dataset_subset
 
     def retrival_support_set(self, dataset, k_shot, cache_dir, retrieval_base_size=-1, seed=None):
         """

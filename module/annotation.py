@@ -1677,7 +1677,7 @@ class Annotation(Label):
         if kwargs['eval']:
             # important! we must remove the '0'('O' label) span from the pred_spans before evaluation
             pred_spans = [span for span in cache_result['pred_spans'][0] if int(span[-1]) != self.label2id['O']]
-            res_file = self.evaluate(
+            res_file, res_by_class_file = self.evaluate(
                 cache_result['y_true'][0],
                 pred_spans,
                 anno_cfg=anno_cfg,
@@ -1694,7 +1694,7 @@ class Annotation(Label):
         # annotator_name is the name of the annotator
         # task_dir is the directory of the task
         # return both of them to get the res_file
-        return res_file, anno_cfg
+        return res_file,  res_by_class_file, anno_cfg
 
     def evaluate(self, y_true, y_pred, anno_cfg, **kwargs):
         """
@@ -1724,7 +1724,12 @@ class Annotation(Label):
 
         # compute span-level metrics
         eval_results = fu.compute_span_f1(copy.deepcopy(y_true),  copy.deepcopy(y_pred))
-        df_metrics = fu.compute_span_f1_by_labels(copy.deepcopy(y_true), copy.deepcopy(y_pred), id2label=self.id2label, res_file=res_by_class_file)
+        df_metrics = fu.compute_span_f1_by_labels(
+            copy.deepcopy(y_true),
+            copy.deepcopy(y_pred),
+            id2label=self.id2label,
+            res_file=res_by_class_file
+        )
         self.logger.info(f"===== Metrics for each label =====\n{df_metrics}")
 
         if anno_cfg['k_shot'] > 0 and kwargs['prompt_type'] not in ('retrieval_fs', 'retrieval_lsp'):  # LSPI and LC are only available for few-shot setting
@@ -1747,7 +1752,7 @@ class Annotation(Label):
             with open(eff_file, 'w') as f:
                 for metric, res in kwargs['efficiency_paras'].items():
                     f.write(f'{metric}: {res}\n')
-        return res_file
+        return res_file, res_by_class_file
 
     def get_label_measure(self, test_dataset, anno_cfg, prompt_type='sc_fs', beta=1, seed=42):
         """

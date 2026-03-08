@@ -4,8 +4,10 @@ import numpy as np
 import os
 
 vis_path = '../data/vis'
-res_template = ('../data/{dataset}/eval/span_bio/{method}/{method_setting}/simple_description'
+res_template = ('../data/{dataset}/bak/eval/span_bio/{method}/{method_setting}/simple_description'
                 '/random_sampling/batch_qa/{model}/{model_setting}_res.txt')
+res_by_class_template = ('../data/{dataset}/bak/eval/span_bio/{method}/{method_setting}/simple_description'
+                         '/random_sampling/batch_qa/{model}/{model_setting}_res.txt')
 # key is the model name, value is the model name in the plot
 models = {
     'Qwen1.5': 'Qwen',
@@ -18,12 +20,12 @@ datasets = ('ontonotes5_en', 'mit_movies', 'ontonotes5_zh', 'CMeEE_V2')  # 'onto
 line_colors = ['#F09BA0', '#9BBBE1', '#8FBC8F']
 error_colors = ['#8D0405', '#060270', '#006400']
 markers = ['o', '^', 's', 'd']
-
+markersize = 9
 plt.rcParams["font.sans-serif"] = "DejaVu Sans Mono"
 plt.rcParams['axes.unicode_minus'] = False
 
 # for mini version
-size = 18  # 20
+size = 14  # 20
 plt.rcParams.update({"font.size":size})  # controls default text size
 plt. rc ('axes', titlesize=size) # fontsize of the title
 plt. rc ('axes', labelsize=size) # fontsize of the x and y labels
@@ -105,7 +107,7 @@ class vis_theis:
         :param file_name:
         :return:
         """
-        error_bar = True
+        error_bar = False
         k_shots = (1, 5)
         seeds = (22, 32, 42)
         demo_nums = (1, 2, 3, 4, 5, 6)
@@ -154,6 +156,7 @@ class vis_theis:
                            color=line_colors[model_idx],
                            fmt='-',
                            marker=markers[model_idx],
+                           markersize=markersize,
                            label=models[model],
                            ecolor=error_colors[model_idx],
                            elinewidth=1,
@@ -164,6 +167,7 @@ class vis_theis:
                             demo_nums,
                             model_f1_scores,
                             f'-{markers[model_idx]}',
+                            markersize=markersize,
                             color=line_colors[model_idx],
                             label=models[model]
                         )
@@ -253,7 +257,7 @@ class vis_theis:
         :return:
         """
 
-        error_bar = True
+        error_bar = False
         k_shots = (1, 5)
         seeds = (22, 32, 42)
         rep_nums = (1, 2, 3, 4, 5, 6)
@@ -303,6 +307,7 @@ class vis_theis:
                             color=line_colors[model_idx],
                             fmt='-',
                             marker=markers[model_idx],
+                            markersize=markersize,
                             label=models[model],
                             ecolor=error_colors[model_idx],
                             elinewidth=1,
@@ -313,6 +318,7 @@ class vis_theis:
                             rep_nums,
                             model_f1_scores,
                             f'-{markers[model_idx]}',
+                            markersize=markersize,
                             color=line_colors[model_idx],
                             label=models[model]
                         )
@@ -327,7 +333,7 @@ class vis_theis:
         :return:
         """
 
-        error_bar = True
+        error_bar = False
         k_shots = (1, 5)
         seeds = (22, 32, 42)
         rep_num = 1
@@ -377,6 +383,7 @@ class vis_theis:
                             color=line_colors[model_idx],
                             fmt='-',
                             marker=markers[model_idx],
+                            markersize=markersize,
                             label=models[model],
                             ecolor=error_colors[model_idx],
                             elinewidth=1,
@@ -387,6 +394,7 @@ class vis_theis:
                             subset_sizes,
                             model_f1_scores,
                             f'-{markers[model_idx]}',
+                            markersize=markersize,
                             color=line_colors[model_idx],
                             label=models[model]
                         )

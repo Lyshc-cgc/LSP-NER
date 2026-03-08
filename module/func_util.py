@@ -463,57 +463,99 @@ def compute_label_coverage(label_sets: list, gold_label_sets: list):
     return label_coverage
 
 
-def write_metrics_to_excel(worksheet, start_row, res_file, anno_cfg):
+def write_metrics_to_excel(
+        metrics_worksheet,
+        metrics_by_class_worksheet,
+        start_row,
+        res_file,
+        res_by_class_file,
+        anno_cfg
+):
     """
     write metrics to excel files
 
-    :param worksheet: the worksheet to write the metrics.
+    :param metrics_worksheet: the worksheet to write the metrics.
+    :param metrics_by_class_worksheet: the worksheet to write the metrics by classes.
     :param start_row: the row index we start. If the worksheet is new, start_row is 2. elif start_row > 2, it's the last row we add data.
     :param res_file, the file to save the results
+    :param res_by_class_file: the file to save the results by class.
     :param anno_cfg: the configuration of the annotation.
     :return:
     """
 
     with open(res_file, 'r') as f:
         eval_results = f.readlines()
+    metrics_by_class = pd.read_csv(res_by_class_file)
 
     metric_num = len(eval_results)  # the number of metrics
+    label_num = len(metrics_by_class) # the number of labels, including the total row
     if start_row == 2:  # it's a new worksheet
-        worksheet.write(0, 0, 'label_mention_map_portion')
-        worksheet.write(0, 1, 'rep_num')
-        worksheet.write(0, 2, '5-shot')
-        worksheet.write(0, 3, 'subset_size')
-        worksheet.write(0, metric_num + 4, '1-shot')
+        metrics_worksheet.write(0, 0, 'label_mention_map_portion')
+        metrics_worksheet.write(0, 1, 'rep_num')
+        metrics_worksheet.write(0, 2, '5-shot')
+        metrics_worksheet.write(0, 3, 'subset_size')
+        metrics_worksheet.write(0, metric_num + 4, '1-shot')
+
+        metrics_by_class_worksheet.write(0, 0, 'label_mention_map_portion')
+        metrics_by_class_worksheet.write(0, 1, 'rep_num')
+        metrics_by_class_worksheet.write(0, 2, '5-shot')
+        metrics_by_class_worksheet.write(0, 3, 'subset_size')
+        metrics_by_class_worksheet.write(0, label_num + 4, '1-shot')
+
         if anno_cfg['k_shot'] == 5:  # 5-shot
             head_row, head_col = 1, 4  # headers start from (1, 4)
             data_row, data_col = 2, 4  # datas start from (2, 4)
+
+            class_head_row, class_head_col = 1, 4
+            class_data_col = 4
         else:  # 1-shot
             head_row, head_col = 1, metric_num + 4  # headers start from (1, metric_num + 4)
             data_row, data_col = 2, metric_num + 4  # datas start from (2, metric_num + 4)
+
+            class_head_row, class_head_col = 1, label_num + 4
+            class_data_col = label_num + 4
     elif start_row > 2:  # we continue to write data to the older worksheet
         if anno_cfg['k_shot'] == 5:  # 5-shot
             head_row, head_col = 1, 4  # headers start from (1, 4)
             data_row, data_col = start_row, 4  # datas start from (start_row, 4)
+
+            class_head_row, class_head_col = 1, 4
+            class_data_col = 4
         else:  # 1-shot
             head_row, head_col = 1, metric_num + 4  # headers start from (1, metric_num + 4)
             data_row, data_col = start_row, metric_num + 4  # datas start from (start_row, metric_num + 4)
+
+            class_head_row, class_head_col = 1, label_num + 4
+            class_data_col = label_num + 4
 
     if 'repeat_num' in anno_cfg.keys():
         rep_num = anno_cfg['repeat_num']
     elif 'demo_times':
         rep_num = anno_cfg['demo_times']
-    worksheet.write(data_row, 0, anno_cfg['label_mention_map_portion'])
-    worksheet.write(data_row, 1, rep_num)
-    worksheet.write(data_row, 2, anno_cfg['annotator_name'])
-    worksheet.write(data_row, 3, anno_cfg['subset_size'])
+    metrics_worksheet.write(data_row, 0, anno_cfg['label_mention_map_portion'])
+    metrics_worksheet.write(data_row, 1, rep_num)
+    metrics_worksheet.write(data_row, 2, anno_cfg['annotator_name'])
+    metrics_worksheet.write(data_row, 3, anno_cfg['subset_size'])
+
+    metrics_by_class_worksheet.write(data_row, 0, anno_cfg['label_mention_map_portion'])
+    metrics_by_class_worksheet.write(data_row, 1, rep_num)
+    metrics_by_class_worksheet.write(data_row, 2, anno_cfg['annotator_name'])
+    metrics_by_class_worksheet.write(data_row, 3, anno_cfg['subset_size'])
+    for row in range(label_num):
+        if start_row == 2:  # header
+            metrics_by_class_worksheet.write(class_head_row, class_head_col, metrics_by_class.iloc[row, 0])
+            class_head_col += 1
+        metrics_by_class_worksheet.write(data_row, class_data_col, metrics_by_class.iloc[row, -1])
+        class_data_col += 1
+
     for line in eval_results:
         line = line.strip()
         line = line.split(' ')
         metric, res = line[0], float(line[1])
         if start_row == 2:  # header
-            worksheet.write(head_row, head_col, metric)
+            metrics_worksheet.write(head_row, head_col, metric)
             head_col += 1
-        worksheet.write(data_row, data_col, res)
+        metrics_worksheet.write(data_row, data_col, res)
         data_col += 1
     data_row += 1
     return  data_row

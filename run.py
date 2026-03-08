@@ -1,3 +1,4 @@
+import json
 import os
 import asyncio
 import xlsxwriter
@@ -16,10 +17,10 @@ dataset_names = ['ontonotes5_en']  # 'ontonotes5_en', 'mit_movies', 'CMeEE_V2', 
 use_api = True
 api_model = 'gpt'  # 'qwen', 'deepseek', 'glm', 'gpt'
 local_model = 'Qwen1.5'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
-method='retrieval'  # 'lsp', 'retrieval'
+method='lsp'  # 'lsp', 'retrieval'
 
 seeds = [22]  # retrieval-based时 只需要一个seed
-test_subset_size = 300
+test_subset_size = -1
 retrieval_base_size = 20  # number of training data used for k-shot sampling or retrieval setting
 concurrency_level = 10  # number of concurrent requests
 
@@ -50,7 +51,12 @@ async def main():
         labels_cfg = fu.get_config(config['label_cfgs'][dataset_name])  # label config
         proc = Processor(data_cfg, labels_cfg, natural_form)
         dataset, support_set_info = proc.process(method=method, retrieval_base_size=retrieval_base_size)
-        dataset_subset = dataset.shuffle(seed=42).flatten_indices().select(range(test_subset_size))  # fixed test subset for all experiments
+        label_statistics = proc.statistics(dataset)
+        logger.info(f'dataset {dataset_name} label statistics:\n{label_statistics["label_nums"]}')
+        label_nums, label_dist = label_statistics["label_nums"], label_statistics["label_dist"]
+        with open(f'{dataset_name}_label_stats.json', 'w') as f:
+            json.dump(label_nums, f)
+            json.dump(label_dist, f)
         language = data_cfg['language']  # language of the dataset
 
         # 3. annotate the data by LLMs
@@ -59,8 +65,15 @@ async def main():
         # 'lab_uniform' for uniform sampling at label-level. Choice probability is uniform for each label.
         # 'proportion' for proportion sampling. Choice probability is proportional to the number of entities for each label.
         # 'shot_sample' for sampling test set like k-shot sampling. Each label has at least k instances.
-        sampling_strategy = 'random'
-        assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample')
+        # 'mix' for mixed sampling. Combine 'lab_uniform' and 'proportion' sampling strategies.
+        sampling_strategy = None
+        if test_subset_size > 0:
+            assert sampling_strategy in ('random', 'lab_uniform', 'proportion', 'shot_sample', 'mix')
+            dataset_subset = proc.subset_sampling(dataset, test_subset_size, sampling_strategy, 42)
+        else:
+            dataset_subset = dataset
+        # dataset_subset = dataset.shuffle(seed=42).flatten_indices().select(
+        #     range(test_subset_size))  # fixed test subset for all experiments
 
         # 3.2 dialogue style settings
         # 'multi-qa' for multi-turn QA, we concatenate the output of the previous turn with the input of the current turn.
@@ -70,7 +83,7 @@ async def main():
 
         # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
-        for prompt_type in ['retrieval_lsp']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp'
+        for prompt_type in ['sc_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp'
             assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp')
 
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
@@ -93,7 +106,7 @@ async def main():
             ignore_sent_set = [False] # [False, True]  # whether to ignore the sentence. If True, the sentence in the examples will be shown as '***'.
             label_mention_map_portions_set = [[1]] # [[1]]  [[1], [1, 0.75, 0.5, 0.25, 0]], the portion of the corrected label-mention pair. Default is 1, which means all the label-mention pairs are correct.
             label_mention_map_choice = 'redundancy'  # 'accuracy', 'redundancy'
-            repeat_num = 1
+            repeat_num = 2
 
             anno_cfg_paths = config['anno_cfgs'][prompt_type]
             anno_cfgs = [fu.get_config(anno_cfg_path) for anno_cfg_path in anno_cfg_paths]
@@ -166,21 +179,26 @@ async def main():
             start_row = 2  # the starting row of the excel file
             excel_file = f'{dataset_name}_metrics.xlsx'
             workbook = xlsxwriter.Workbook(excel_file)  # write metric to excel
-            worksheet = workbook.add_worksheet()  # default 'Sheet 1'
-            for res_file, anno_cfg in results:
-                if res_file is None:
+            metrics_worksheet = workbook.add_worksheet('metrics')  # default 'Sheet 1'
+            metrics_by_class_worksheet = workbook.add_worksheet('metrics_by_class')  # default 'Sheet 2'
+            for res_file, res_by_class_file, anno_cfg in results:
+                if res_file is None or res_by_class_file is None:
                     eval_dir = anno_cfg['eval_dir'].format(dataset_name=dataset_name)
                     res_cache_dir = os.path.join(eval_dir, anno_cfg['task_dir'])
                     if not os.path.exists(res_cache_dir):
                         os.makedirs(res_cache_dir)
                     res_file = os.path.join(res_cache_dir, '{}_res.txt'.format(anno_cfg['annotator_name']))
-                    print(f'res_file not found, set to {res_file}')
+                    res_by_class_file = os.path.join(res_cache_dir, '{}_res_by_class.csv'.format(anno_cfg['annotator_name']))
+                    logger.info(f'res_file not found, set to {res_file}')
+                    logger.info(f'res_by_class_file not found, set to {res_by_class_file}')
 
                 logger.info(f'write metrics ({res_file}) to excel file {excel_file}')
                 start_row = fu.write_metrics_to_excel(
-                    worksheet=worksheet,
+                    metrics_worksheet=metrics_worksheet,
+                    metrics_by_class_worksheet=metrics_by_class_worksheet,
                     start_row=start_row,
                     res_file=res_file,
+                    res_by_class_file=res_by_class_file,
                     anno_cfg=anno_cfg,
                 )
             workbook.close()
