@@ -1,0 +1,113 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+lsp-env/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyCharm
+.iml
+
+# Logs
+logs/
+*.log
+
+# Data and Results (keep raw data, ignore generated)
+data/*/anno_res/
+data/*/preprocess/
+data/*/eval/
+data/*/continue/
+data/*/batch_infer/
+data/*/support_set/
+data/vis/
+
+# Model outputs and metrics
+*_metrics.xlsx
+*_label_stats.json
+
+# Large model files (if not using Git LFS)
+model/*.bin
+model/*.msgpack
+model/*.h5
+model/*.pth
+model/*.ckpt
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# API keys and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.secret
+
+# Checkpoint files
+*.checkpoint
+checkpoints/
+
+# Cache
+.cache/
+.hf_cache/
+
+# Hugging Face models (if downloading)
+.hfd/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Distributed computing
+ray/
