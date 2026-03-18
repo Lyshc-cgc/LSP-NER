@@ -111,3 +111,6 @@ dmypy.json
 
 # Distributed computing
 ray/
+
+# ai coding assistants
+/CLAUDE.md
