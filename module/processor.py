@@ -3,14 +3,12 @@ import math
 import copy
 import random
 import numpy as np
-import faiss
 import jsonlines
 
 from tqdm import tqdm
 from datasets import load_dataset, load_from_disk, Dataset
 import module.func_util as fu
 from .label import Label
-from .simcse import SimCSE
 
 class Processor(Label):
     """
@@ -27,15 +25,6 @@ class Processor(Label):
         self.config = data_cfg
         self.natural_flag = 'natural' if natural_form else 'bio'  # use natural-form or bio-form
         self.logger = fu.get_sync_logger()  # use sync logger for data processing
-        self.sim_model = None
-
-    def _init_sim_model(self, sim_path='../model/princeton-nlp/sup-simcse-roberta-large'):
-        """
-        Initialize the SimCSE model for retrieval-based support set sampling.
-        :return:
-        """
-        if self.sim_model is None:
-            self.sim_model = SimCSE(sim_path)
 
     def _get_span_and_tags(self, tokens, tags, language='en'):
         """
@@ -398,101 +387,13 @@ class Processor(Label):
                 dataset_subset = dataset.select(choice_indices)
         return dataset_subset
 
-    def retrival_support_set(self, dataset, k_shot, cache_dir, retrieval_base_size=-1, seed=None):
+
+
+    def process(self, **kwargs):
         """
-        Retrieve top-k nearest neighbors for each test instance from the train dataset.
-
-        :param dataset: The dataset containing 'train' and 'test' splits.
-        :param k_shot: The number of nearest neighbors to retrieve.
-        :param cache_dir: The directory to cache the computed embeddings.
-        :param retrieval_base_size: The number of samples to randomly select from the train set for retrieval. If -1, use the entire train set.
-        :param seed: The random seed for selecting the subset of the train set.
-        :return: A list of indices representing the top-k nearest neighbors for each test instance.
-        """
-
-        # Define cache file paths
-        train_cache_file = os.path.join(cache_dir, "train_embeddings.npy")
-        test_cache_file = os.path.join(cache_dir, "test_embeddings.npy")
-        join_character = ' ' if self.config['language'] == 'en' else ''
-
-        # Load or compute train embeddings
-        if os.path.exists(train_cache_file):
-            train_embeddings = np.load(train_cache_file)
-        else:
-            train_sentences = [join_character.join(tokens) for tokens in dataset['train']['tokens']]
-            train_embeddings = self.sim_model.encode(
-                train_sentences,
-                batch_size=256,
-                normalize_to_unit=True,
-                return_numpy=True
-            )
-            np.save(train_cache_file, train_embeddings)
-
-        # If train_data_size is specified, randomly sample a subset of the train set
-        if retrieval_base_size != -1:
-            # if seed is not None:
-            #     np.random.seed(seed)
-            sample_indices = np.random.choice(train_embeddings.shape[0], retrieval_base_size, replace=False)
-            train_embeddings = train_embeddings[sample_indices]
-            train_subset = dataset['train'].select(sample_indices)
-        else:
-            train_subset = dataset['train']
-
-        # Load or compute test embeddings
-        if os.path.exists(test_cache_file):
-            test_embeddings = np.load(test_cache_file)
-        else:
-            # self.config['split'] is the test or validation split
-            test_sentences = [join_character.join(tokens) for tokens in dataset[self.config['split']]['tokens']]
-            test_embeddings = self.sim_model.encode(
-                test_sentences,
-                batch_size=256,
-                normalize_to_unit=True,
-                return_numpy=True
-            )
-            np.save(test_cache_file, test_embeddings)
-
-        # Build FAISS index for train embeddings
-        # Build FAISS index for train embeddings (use GPU if available)
-        train_embeddings = train_embeddings.astype('float32')
-        test_embeddings = test_embeddings.astype('float32')
-        cpu_index = faiss.IndexFlatIP(train_embeddings.shape[1])
-        cpu_index.add(train_embeddings)
-
-        try:
-            # 初始化 GPU 资源并将 CPU 索引拷贝到 GPU（device 0）
-            res = faiss.StandardGpuResources()
-            gpu_index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
-            index = gpu_index
-            self.logger.info("Using FAISS GPU index on device 0")
-        except Exception as e:
-            index = cpu_index
-            self.logger.warning(f"FAISS GPU not available, using CPU index: {e}")
-
-        # Retrieve top-k nearest neighbors for each test instance
-        self.logger.info(f"Retrieving {k_shot} nearest neighbors for test instances...")
-        _, knn_indices = index.search(test_embeddings, k_shot)  # 乘4，保证demonstration的数量级一致
-        self.logger.info("Retrieval completed.")
-
-        # Map knn_indices back to the original dataset if size is specified
-        # meanwhile, we convert numpy.int64 to int
-        if retrieval_base_size != -1:
-            knn_indices = [[int(sample_indices[int(idx)]) for idx in knn] for knn in knn_indices]
-        else:
-            knn_indices = [[int(idx) for idx in knn] for knn in knn_indices]
-        return knn_indices
-
-
-    def process(self, method = 'lsp', **kwargs):
-        """
-        Process the dataset.
-        :param method: the method tot be evaluated. 'lsp' for label subset partition. 'retrieval' for retrieval-based method.
-        :param kwargs: 用于'retrieval'方法的其他参数，例如
-            1) retrieval_base_size: 检索的训练集大小。如果为-1，表示从整个训练集中检索支持集。
+        Process the dataset for LSP (Label Subset Partitioning) method.
         :return:
         """
-        assert method in ('lsp', 'retrieval', 'other')
-
         # 0. init config
         self.config['preprocessed_dir'] = self.config['preprocessed_dir'].format(dataset_name=self.config['dataset_name'])
         self.config['continue_dir'] = self.config['continue_dir'].format(dataset_name=self.config['dataset_name'])
@@ -507,16 +408,9 @@ class Processor(Label):
         continue_dir = os.path.join(self.config['continue_dir'], f'span_{self.natural_flag}')  # the directory to store the continued data to be annotated
 
         # the directory to cache the support set
-        # 不同的方法使用不同的support set
-        # 对于lsp方法，support set直接从train split中采样，采样得到的support set被放到一个jsonl文件中，测试集所有样本共享同一个support set
-        # 对于retrival方法，利用向量相似度为测试集每个样本检索support set，jsonl文件中存储每个测试样本对应的support set的下标
-        method_name = method
-        if method == 'retrieval':
-            retrieval_base_size = kwargs.get('retrieval_base_size', -1)
-            if retrieval_base_size == -1:
-                method_name = method + "_full"
-            else:
-                method_name = method + f"_{retrieval_base_size}"
+        # For LSP method, support set is directly sampled from train split,
+        # all test samples share the same support set stored in one jsonl file
+        method_name = 'lsp'
         ss_cache_dir = os.path.join(self.config['ss_cache_dir'], f'span_{self.natural_flag}', method_name)
 
         # 1. check and load the cached formatted dataset
@@ -554,68 +448,35 @@ class Processor(Label):
             if not os.path.exists(ss_cache_dir):
                 os.makedirs(ss_cache_dir)
 
-            if method == 'retrieval':
-                self._init_sim_model()  # initialize the SimCSE model for retrieval-based support set sampling
-
             for k_shot in self.config['k_shot']:
                 for seed in self.config['seed']:
                     cache_ss_file_name = '{}_support_set_{}_shot_{}.jsonl'.format(self.config['sample_split'], k_shot, seed)
                     cache_counter_file_name = '{}_counter_{}_shot_{}.txt'.format(self.config['sample_split'], k_shot, seed)
-                    if method == 'retrieval':
-                        cache_ss_file_name = '{}_support_set_{}_shot.jsonl'.format(self.config['sample_split'], k_shot)
-                        cache_counter_file_name = '{}_counters_{}_shot.txt'.format(self.config['sample_split'], k_shot)
                     support_set_file = os.path.join(ss_cache_dir, cache_ss_file_name)
                     counter_file = os.path.join(ss_cache_dir, cache_counter_file_name)
 
                     # check and load the cache
                     if not os.path.exists(support_set_file):
-                    # 3.2 sample support set from scratch
+                        # 3.2 sample support set from scratch
                         self.logger.info(f'{support_set_file} does not exist, start to sample the support set...')
-                        if method == 'retrieval':
-                            support_sets = self.retrival_support_set(
-                                preprocessed_dataset,
-                                k_shot,
-                                ss_cache_dir,
-                                retrieval_base_size,
-                                seed,
-                            )  # support set for each test instance
+                        support_set, counter = self.support_set_sampling(
+                            preprocessed_dataset,
+                            k_shot,
+                            self.config['sample_split'],
+                            seed,
+                        )
+                        # cache the support set
+                        with jsonlines.open(support_set_file, mode='w') as writer:
+                            for idx in support_set:
+                                tokens = preprocessed_dataset[self.config['sample_split']]['tokens'][idx]
+                                tags = preprocessed_dataset[self.config['sample_split']]['tags'][idx]
+                                spans_labels = preprocessed_dataset[self.config['sample_split']]['spans_labels'][idx]
+                                writer.write({'id': int(idx), 'tokens': tokens, 'tags': tags, 'spans_labels': spans_labels})
 
-                            # cace the support set
-                            dir_path = os.path.dirname(support_set_file)
-                            if dir_path and not os.path.exists(dir_path):
-                                os.makedirs(dir_path)
-                            with jsonlines.open(support_set_file, mode='w') as writer:
-
-                                for support_set in support_sets:
-                                    all_tokens, all_tags, all_spans_labels = [], [], []
-                                    for idx in support_set:
-                                        tokens = preprocessed_dataset[self.config['sample_split']]['tokens'][idx]
-                                        tags = preprocessed_dataset[self.config['sample_split']]['tags'][idx]
-                                        spans_labels =  preprocessed_dataset[self.config['sample_split']]['spans_labels'][idx]
-                                        all_tokens.append(tokens)
-                                        all_tags.append(tags)
-                                        all_spans_labels.append(spans_labels)
-                                    ids = [int(i) for i in support_set]
-                                    writer.write({'ids':ids, 'tokens': all_tokens, 'tags': all_tags, 'spans_labels': all_spans_labels})
-                        else:
-                            support_set, counter = self.support_set_sampling(
-                                preprocessed_dataset,
-                                k_shot,
-                                self.config['sample_split'],
-                                seed,
-                            )
-                            # cache the support set
-                            with jsonlines.open(support_set_file, mode='w') as writer:
-                                for idx in support_set:
-                                    tokens = preprocessed_dataset[self.config['sample_split']]['tokens'][idx]
-                                    tags = preprocessed_dataset[self.config['sample_split']]['tags'][idx]
-                                    spans_labels = preprocessed_dataset[self.config['sample_split']]['spans_labels'][idx]
-                                    writer.write({'id': int(idx), 'tokens': tokens, 'tags': tags, 'spans_labels': spans_labels})
-
-                            # cache the counter
-                            with open(counter_file, 'w') as writer:
-                                for k, v in counter.items():
-                                    writer.write(f'{k}: {v}\n')
+                        # cache the counter
+                        with open(counter_file, 'w') as writer:
+                            for k, v in counter.items():
+                                writer.write(f'{k}: {v}\n')
 
             support_set_info = {
                 'dir': ss_cache_dir,

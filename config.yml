@@ -32,12 +32,6 @@ anno_cfgs:
   self_cons:  # self-consistency, few-shot setting
     - cfgs/self_consistency/anno_cfg_self_consistency_5.yml
     - cfgs/self_consistency/anno_cfg_self_consistency_1.yml
-  retrieval_fs:
-    - cfgs/retrieval_fs/anno_cfg_retrieval_fs_5.yml
-    - cfgs/retrieval_fs/anno_cfg_retrieval_fs_1.yml
-  retrieval_lsp:
-    - cfgs/retrieval_lsp/anno_cfg_retrieval_lsp_5.yml
-    - cfgs/retrieval_lsp/anno_cfg_retrieval_lsp_1.yml
 
 # api config
 api_cfg: cfgs/api.yml

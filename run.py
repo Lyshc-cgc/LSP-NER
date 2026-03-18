@@ -47,7 +47,7 @@ async def main_cli(args):
         data_cfg = fu.get_config(config['data_cfgs'][dataset_name])  # data config
         labels_cfg = fu.get_config(config['label_cfgs'][dataset_name])  # label config
         proc = Processor(data_cfg, labels_cfg, natural_form)
-        dataset, support_set_info = proc.process(method=args.method, retrieval_base_size=args.retrieval_base_size)
+        dataset, support_set_info = proc.process()
         label_statistics = proc.statistics(dataset)
         logger.info(f'dataset {dataset_name} label statistics:\n{label_statistics["label_nums"]}')
         label_nums, label_dist = label_statistics["label_nums"], label_statistics["label_dist"]
@@ -81,17 +81,14 @@ async def main_cli(args):
         # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
         for prompt_type in args.prompt_types:
-            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp')
-            
+            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons')
+
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
                 await logger.error('multi_qa style only support mt_fs')
                 dialogue_style = 'batch_qa'
             if dialogue_style == 'multi_qa' and use_api and annotator.batch_infer:
                 await logger.error('multi_qa style cannot support batch inference using API')
                 annotator.batch_infer = False  # set batch_infer to False for multi_qa
-            if args.method == 'retrieval' and prompt_type not in ('retrieval_fs', 'retrieval_lsp'):
-                await logger.error('retrieval-based processingg only support retrieval_fs ')
-                return
             # 3.4 other testing settings
             
             if prompt_type == 'sc_fs':
@@ -137,8 +134,6 @@ async def main_cli(args):
                                         # we need to set the temperature, top_p, num_return_sequences manually before init annotator
                                         anno.annotator.annotator_cfg['anno_temperature'] = anno_cfg['temperature']
                                         anno.annotator.annotator_cfg['anno_top_p'] = anno_cfg['top_p']
-                                    case 'retrieval_fs' | 'retrieval_lsp':
-                                        anno_cfg['retrieval_base_size'] = args.retrieval_base_size
                                 anno_cfg['support_set_info'] = support_set_info
                                 anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
                                 anno_cfg['language'] = language
@@ -210,11 +205,9 @@ async def main():
     dataset_names = ['ontonotes5_en']  # 'ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh'
     use_api = True
     api_model = 'gpt'  # 'qwen', 'deepseek', 'glm', 'gpt'
-    method = 'lsp'  # 'lsp', 'retrieval'
 
-    seeds = [22]  # retrieval-based时 只需要一个seed
+    seeds = [22]
     test_subset_size = -1
-    retrieval_base_size = 20  # number of training data used for k-shot sampling or retrieval setting
     concurrency_level = 10  # number of concurrent requests
 
     logger = fu.get_async_logger()
@@ -246,7 +239,7 @@ async def main():
         data_cfg = fu.get_config(config['data_cfgs'][dataset_name])  # data config
         labels_cfg = fu.get_config(config['label_cfgs'][dataset_name])  # label config
         proc = Processor(data_cfg, labels_cfg, natural_form)
-        dataset, support_set_info = proc.process(method=method, retrieval_base_size=retrieval_base_size)
+        dataset, support_set_info = proc.process()
         label_statistics = proc.statistics(dataset)
         logger.info(f'dataset {dataset_name} label statistics:\n{label_statistics["label_nums"]}')
         label_nums, label_dist = label_statistics["label_nums"], label_statistics["label_dist"]
@@ -279,8 +272,8 @@ async def main():
 
         # 3.3 annotation prompt settings
         anno = Annotation(annotator, labels_cfg)
-        for prompt_type in ['sc_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp'
-            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp')
+        for prompt_type in ['sc_fs']: # 'mt_fs', 'st_fs', 'sc_fs', 'self_cons'
+            assert prompt_type in ('mt_fs', 'st_fs', 'sc_fs', 'self_cons')
 
             if dialogue_style == 'multi_qa' and prompt_type != 'mt_fs':
                 await logger.error('multi_qa style only support mt_fs')
@@ -288,9 +281,6 @@ async def main():
             if dialogue_style == 'multi_qa' and use_api and annotator.batch_infer:
                 await logger.error('multi_qa style cannot support batch inference using API')
                 annotator.batch_infer = False  # set batch_infer to False for multi_qa
-            if method == 'retrieval' and prompt_type not in ('retrieval_fs', 'retrieval_lsp'):
-                await logger.error('retrieval-based processingg only support retrieval_fs ')
-                return
             # 3.4 other testing settings
 
             if prompt_type == 'sc_fs':
@@ -336,8 +326,6 @@ async def main():
                                         # we need to set the temperature, top_p, num_return_sequences manually before init annotator
                                         anno.annotator.annotator_cfg['anno_temperature'] = anno_cfg['temperature']
                                         anno.annotator.annotator_cfg['anno_top_p'] = anno_cfg['top_p']
-                                    case 'retrieval_fs' | 'retrieval_lsp':
-                                        anno_cfg['retrieval_base_size'] = retrieval_base_size
                                 anno_cfg['support_set_info'] = support_set_info
                                 anno_cfg['demo_times'] = rep_num + 1  # for mt_fs
                                 anno_cfg['language'] = language
@@ -415,9 +403,6 @@ if __name__ == '__main__':
         # Required arguments
         parser.add_argument('--datasets', type=str, nargs='+', required=True,
                           help='Dataset names to process (e.g., ontonotes5_en mit_movies CMeEE_V2)')
-        parser.add_argument('--method', type=str, required=True,
-                          choices=['lsp', 'retrieval'],
-                          help='Processing method')
         
         # Model selection - API-only mode
         parser.add_argument('--api-model', type=str, default='gpt',
@@ -427,20 +412,15 @@ if __name__ == '__main__':
         # Sampling and data settings
         parser.add_argument('--test-subset-size', type=int, default=-1,
                           help='Test subset size (-1 for full test set)')
-        parser.add_argument('--sampling-strategy', type=str, default=None,
-                          choices=['random', 'lab_uniform', 'proportion', 'shot_sample', 'mix'],
-                          help='Sampling strategy for test subset')
-        parser.add_argument('--retrieval-base-size', type=int, default=20,
-                          help='Number of training data used for k-shot sampling or retrieval setting')
         parser.add_argument('--seeds', type=int, nargs='+', default=[22, 32, 42],
                           help='Random seeds for reproducibility')
         parser.add_argument('--concurrency-level', type=int, default=10,
                           help='Number of concurrent requests')
         
         # Prompt and dialogue settings
-        parser.add_argument('--prompt-types', type=str, nargs='+', 
+        parser.add_argument('--prompt-types', type=str, nargs='+',
                           default=['sc_fs'],
-                          choices=['mt_fs', 'st_fs', 'sc_fs', 'self_cons', 'retrieval_fs', 'retrieval_lsp'],
+                          choices=['mt_fs', 'st_fs', 'sc_fs', 'self_cons'],
                           help='Prompt types to use')
         parser.add_argument('--dialogue-style', type=str, default='batch_qa',
                           choices=['multi_qa', 'batch_qa'],
