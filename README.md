@@ -114,26 +114,50 @@ python run.py --datasets <dataset_name> --method <method> --prompt-types <prompt
 ### LSP Method (Proposed)
 Our Label Subset Partition method:
 ```bash
-# LSP with subset candidate prompting on OntoNotes-NLM-en
-python run.py --datasets ontonotes5_en --method lsp --prompt-types sc_fs
+# LSP with subset candidate prompting on MIT-Movies
+python run.py --datasets mit_movies --method lsp --prompt-types sc_fs
 
 # LSP using GPT API for inference
 python run.py --datasets mit_movies --method lsp --use-api --api-model gpt --prompt-types sc_fs
 
-# Quick test with 20 samples
-python run.py --datasets ontonotes5_en --method lsp --test-subset-size 20 --prompt-types sc_fs --repeat-num 1
+# Quick test with 200 samples
+python run.py --datasets mit_movies --method lsp --test-subset-size 200 --prompt-types sc_fs --repeat-num 1
 ```
 
-Available datasets: `ontonotes5_en`, `ontonotes5_zh`, `CMeEE_V2`, `mit_movies`
+Available datasets: `ontonotes5_en`, `ontonotes5_zh`, `CMeEE_V2`, `mit_movies`, `mit_restaurant`, `genia`, `conll2003`
 
-### Vanilla/Few-Shot Baseline
+### Vanilla/Few-Shot Baselines
 Vanilla few-shot setting (full demonstration without subset partition):
-```bash
-# Single-type few-shot (one entity type per demonstration)
-python run.py --datasets ontonotes5_en --method lsp --prompt-types st_fs
 
-# Multi-type few-shot (all entity types in one demonstration)
-python run.py --datasets ontonotes5_en --method lsp --prompt-types mt_fs
+**Single-type few-shot** (one entity type per demonstration):
+```bash
+# Full evaluation on MIT-Movies
+python run.py --datasets mit_movies --method lsp --prompt-types st_fs
+
+# Quick test with 200 samples
+python run.py --datasets mit_movies --method lsp --test-subset-size 200 --prompt-types st_fs --repeat-num 1
+```
+
+**Multi-type few-shot** (all entity types in one demonstration):
+```bash
+# Full evaluation on MIT-Movies
+python run.py --datasets mit_movies --method lsp --prompt-types mt_fs
+
+# Quick test with 200 samples
+python run.py --datasets mit_movies --method lsp --test-subset-size 200 --prompt-types mt_fs --repeat-num 1
+```
+
+### Self-Consistency Baseline
+Self-consistency baseline for few-shot NER:
+```bash
+# Full evaluation on MIT-Movies
+python run.py --datasets mit_movies --method lsp --prompt-types self_cons
+
+# Using GPT API for inference
+python run.py --datasets mit_movies --method lsp --use-api --api-model gpt --prompt-types self_cons
+
+# Quick test with 200 samples
+python run.py --datasets mit_movies --method lsp --test-subset-size 200 --prompt-types self_cons --repeat-num 1
 ```
 
 ## 5. Citation

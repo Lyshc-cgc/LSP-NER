@@ -114,26 +114,50 @@ python run.py --datasets <数据集名称> --method <方法> --prompt-types <提
 ### LSP 方法（本文提出）
 我们的标签子集划分方法：
 ```bash
-# 在 OntoNotes-NLM-en 上使用子集候选提示的 LSP 方法
-python run.py --datasets ontonotes5_en --method lsp --prompt-types sc_fs
+# 在 MIT-Movies 上使用子集候选提示的 LSP 方法
+python run.py --datasets mit_movies --method lsp --prompt-types sc_fs
 
 # 使用 GPT API 推理
 python run.py --datasets mit_movies --method lsp --use-api --api-model gpt --prompt-types sc_fs
 
-# 快速测试 20 个样本
-python run.py --datasets ontonotes5_en --method lsp --test-subset-size 20 --prompt-types sc_fs --repeat-num 1
+# 快速测试 200 个样本
+python run.py --datasets mit_movies --method lsp --test-subset-size 200 --prompt-types sc_fs --repeat-num 1
 ```
 
-可用数据集: `ontonotes5_en`, `ontonotes5_zh`, `CMeEE_V2`, `mit_movies`
+可用数据集: `ontonotes5_en`, `ontonotes5_zh`, `CMeEE_V2`, `mit_movies`, `mit_restaurant`, `genia`, `conll2003`
 
 ### Vanilla 少样本基线
 Vanilla 少样本设置（不进行子集划分的完整演示）：
-```bash
-# 单类型少样本（每个演示一个实体类型）
-python run.py --datasets ontonotes5_en --method lsp --prompt-types st_fs
 
-# 多类型少样本（一个演示包含所有实体类型）
-python run.py --datasets ontonotes5_en --method lsp --prompt-types mt_fs
+**单类型少样本**（每个演示一个实体类型）：
+```bash
+# 在 MIT-Movies 上进行完整评估
+python run.py --datasets mit_movies --method lsp --prompt-types st_fs
+
+# 快速测试 200 个样本
+python run.py --datasets mit_movies --method lsp --test-subset-size 200 --prompt-types st_fs --repeat-num 1
+```
+
+**多类型少样本**（一个演示包含所有实体类型）：
+```bash
+# 在 MIT-Movies 上进行完整评估
+python run.py --datasets mit_movies --method lsp --prompt-types mt_fs
+
+# 快速测试 200 个样本
+python run.py --datasets mit_movies --method lsp --test-subset-size 200 --prompt-types mt_fs --repeat-num 1
+```
+
+### 自一致性 (Self-Consistency) 基线
+少样本 NER 的自一致性基线方法：
+```bash
+# 在 MIT-Movies 上进行完整评估
+python run.py --datasets mit_movies --method lsp --prompt-types self_cons
+
+# 使用 GPT API 推理
+python run.py --datasets mit_movies --method lsp --use-api --api-model gpt --prompt-types self_cons
+
+# 快速测试 200 个样本
+python run.py --datasets mit_movies --method lsp --test-subset-size 200 --prompt-types self_cons --repeat-num 1
 ```
 
 ## 5. 引用
