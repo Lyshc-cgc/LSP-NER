@@ -20,16 +20,20 @@ async def main_cli(args):
     
     config = fu.get_config('config.yml')
     
-    # 1. load annotator
-    # api annotator
+    # 1. load annotator - API-only mode
     assert args.api_model in ('qwen', 'deepseek', 'glm', 'gpt')
-    use_api = args.use_api
-    api_cfg = fu.get_config(config['api_cfg'])[args.api_model] if use_api else None
-    
-    # local annotator
-    assert args.local_model in ('Qwen1.5', 'Mistral', 'Qwen2.5')  # add more
-    annotator_cfg = fu.get_config(config['annotators_cfg'])[args.local_model]
-    
+    use_api = True
+    api_cfg = fu.get_config(config['api_cfg'])[args.api_model]
+
+    # Create minimal annotator_cfg for backward compatibility
+    # self_consistency needs to modify generation parameters
+    annotator_cfg = {
+        'anno_temperature': 0.1,
+        'anno_top_p': 0.5,
+        'anno_max_tokens': 100,
+        'repetition_penalty': 1,
+    }
+
     # init annotator
     annotator = Annotator(annotator_cfg, api_cfg)
     
@@ -115,7 +119,6 @@ async def main_cli(args):
                                 await logger.info(f'language: {language}')
                                 await logger.info(f'use api: {use_api}')
                                 await logger.info(f'api model: {args.api_model}')
-                                await logger.info(f'local model: {args.local_model}')
                                 await logger.info(f'use prompt type: {prompt_type}')
                                 await logger.info(f'test subset size: {args.test_subset_size}')
                                 await logger.info(f'subset sampling strategy: {sampling_strategy}')
@@ -207,7 +210,6 @@ async def main():
     dataset_names = ['ontonotes5_en']  # 'ontonotes5_en', 'mit_movies', 'CMeEE_V2', 'ontonotes5_zh'
     use_api = True
     api_model = 'gpt'  # 'qwen', 'deepseek', 'glm', 'gpt'
-    local_model = 'Qwen1.5'  # 'Qwen1.5', 'Mistral', 'Qwen2.5'
     method = 'lsp'  # 'lsp', 'retrieval'
 
     seeds = [22]  # retrieval-based时 只需要一个seed
@@ -218,14 +220,18 @@ async def main():
     logger = fu.get_async_logger()
 
     config = fu.get_config('config.yml')
-    # 1. load annotator
-    # api annotator
+    # 1. load annotator - API-only mode
     assert api_model in ('qwen', 'deepseek', 'glm', 'gpt')
-    api_cfg = fu.get_config(config['api_cfg'])[api_model] if use_api else None
+    api_cfg = fu.get_config(config['api_cfg'])[api_model]
 
-    # local annotator
-    assert local_model in ('Qwen1.5', 'Mistral', 'Qwen2.5')  # add more
-    annotator_cfg = fu.get_config(config['annotators_cfg'])[local_model]
+    # Create minimal annotator_cfg for backward compatibility
+    # self_consistency needs to modify generation parameters
+    annotator_cfg = {
+        'anno_temperature': 0.1,
+        'anno_top_p': 0.5,
+        'anno_max_tokens': 100,
+        'repetition_penalty': 1,
+    }
 
     # init annotator
     annotator = Annotator(annotator_cfg, api_cfg)
@@ -312,7 +318,6 @@ async def main():
                                 await logger.info(f'language: {language}')
                                 await logger.info(f'use api: {use_api}')
                                 await logger.info(f'api model: {api_model}')
-                                await logger.info(f'local model: {local_model}')
                                 await logger.info(f'use prompt type: {prompt_type}')
                                 await logger.info(f'test subset size: {test_subset_size}')
                                 await logger.info(f'subset sampling strategy: {sampling_strategy}')
@@ -414,15 +419,10 @@ if __name__ == '__main__':
                           choices=['lsp', 'retrieval'],
                           help='Processing method')
         
-        # Model selection
-        parser.add_argument('--use-api', action='store_true', default=False,
-                          help='Use API for annotation')
+        # Model selection - API-only mode
         parser.add_argument('--api-model', type=str, default='gpt',
                           choices=['qwen', 'deepseek', 'glm', 'gpt'],
                           help='API model to use')
-        parser.add_argument('--local-model', type=str, default='Qwen1.5',
-                          choices=['Qwen1.5', 'Mistral', 'Qwen2.5'],
-                          help='Local model to use')
         
         # Sampling and data settings
         parser.add_argument('--test-subset-size', type=int, default=-1,

@@ -37,37 +37,22 @@ class Annotator:
         """
         Initialize the Annotator.
 
-        :param annotator_cfg: the configuration of the local annotator model.
+        :param annotator_cfg: the configuration of the annotator model.
         :param api_cfg: the configuration of the LLM API.
-        :param annotator_cfg:
         """
-        self.use_api = False
-        self.batch_infer = None
-        self.api_cfg = None
-        self.logger = fu.get_sync_logger()  # use sync logger to init annotator model
-
-        if api_cfg:
-            self.use_api = True
-            self.batch_infer = api_cfg['batch_infer']
-            self.client = None
-            self.api_cfg = api_cfg
-        else:
-            self.anno_model = None
-            self.sampling_params = None
-            self.anno_tokenizer = None
+        self.use_api = True
+        self.batch_infer = api_cfg['batch_infer']
+        self.client = None
+        self.api_cfg = api_cfg
         self.annotator_cfg = annotator_cfg
+        self.logger = fu.get_sync_logger()  # use sync logger to init annotator model
 
     def init_anno_model(self):
         """
         init the annotator model. We init anno model only when we start annotation process.
         :return:
         """
-        # 1. GPU setting
-        os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # avoid parallelism in tokenizers
-        cuda_devices = [str(i) for i in range(self.annotator_cfg['tensor_parallel_size'])]
-        os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(cuda_devices)
-
-        # 2. Init the annotating model
+        # 1. Init the API client
         self.logger.info('----- Init LLM -----')
         if self.use_api and not self.client:
             self.logger.info('----- Init API LLM -----')
@@ -76,33 +61,6 @@ class Annotator:
                 base_url=self.api_cfg['base_url'],  # base_url
                 max_retries=3,
             )
-        elif (not self.use_api and not self.anno_model and
-              not self.sampling_params and not self.anno_tokenizer):
-            from vllm import LLM, SamplingParams
-            self.logger.info('----- Init Local LLM -----')
-            # if not use api, we employ local annotator using vllm
-            # https://docs.vllm.ai/en/latest/getting_started/quickstart.html
-            self.anno_model = LLM(
-                model=self.annotator_cfg['checkpoint'],
-                tensor_parallel_size=self.annotator_cfg['tensor_parallel_size'],
-                dtype=self.annotator_cfg['dtype'],
-                gpu_memory_utilization=self.annotator_cfg['gpu_memory_utilization'],
-                trust_remote_code=True,
-                # https://github.com/vllm-project/vllm/issues/6723
-                # set explicitly enable_chunked_prefill to False For Volta GPU
-                enable_chunked_prefill=False
-            )
-            self.sampling_params = SamplingParams(
-                temperature=self.annotator_cfg['anno_temperature'],
-                top_p=self.annotator_cfg['anno_top_p'],
-                max_tokens=self.annotator_cfg['anno_max_tokens'],
-                repetition_penalty=self.annotator_cfg['repetition_penalty']
-            )
-
-            # get anno_model's tokenizer to apply the chat template
-            # https://github.com/vllm-project/vllm/issues/3119
-            # anno_tokenizer = anno_model.llm_engine.tokenizer.tokenizer
-            self.anno_tokenizer = self.anno_model.get_tokenizer()
 
 class Annotation(Label):
     """
@@ -1428,59 +1386,25 @@ class Annotation(Label):
 
             # 2.4 when not using batch inference, get the response of the annotator
             if not self.annotator.batch_infer and anno_cfg['dialogue_style'] == 'batch_qa':
-                if self.annotator.use_api:
-                    # use LLM API and batch_qa
-                    await self.logger.info('using api with batch_qa to annotate...')
-                    tasks = []   # store the tasks for each instance
-                    for chat in all_chat_messagges:
-                        tasks.append(
-                            self.get_response(
-                                client=self.annotator.client,
-                                model_name=model_name,
-                                chat_message=chat,
-                                semaphore=semaphore,
-                                stream=self.annotator.annotator_cfg['stream'],
-                                temperature=self.annotator.annotator_cfg['anno_temperature'],
-                                top_p=self.annotator.annotator_cfg['anno_top_p'],
-                                max_tokens=self.annotator.annotator_cfg['anno_max_tokens']
-                            )
+                # API-only mode - use LLM API and batch_qa
+                await self.logger.info('using api with batch_qa to annotate...')
+                tasks = []   # store the tasks for each instance
+                for chat in all_chat_messagges:
+                    tasks.append(
+                        self.get_response(
+                            client=self.annotator.client,
+                            model_name=model_name,
+                            chat_message=chat,
+                            semaphore=semaphore,
+                            stream=self.annotator.annotator_cfg['stream'] if 'stream' in self.annotator.annotator_cfg else False,
+                            temperature=self.annotator.annotator_cfg['anno_temperature'],
+                            top_p=self.annotator.annotator_cfg['anno_top_p'],
+                            max_tokens=self.annotator.annotator_cfg['anno_max_tokens']
                         )
-                    outputs = await tqdm_asyncio.gather(
-                        *tasks, desc=f"annotating by {annotator_name}, dataset {dataset_name}, prompt_type {kwargs['prompt_type']}"
                     )
-                else:
-                    # use local annotator and batch_qa
-                    # we should use tokenizer.apply_chat_template to add generation template to the chats explicitly
-                    for batch_chats in tqdm(
-                            fu.batched(all_chat_messagges, batch_size),
-                            desc=f"annotating by {annotator_name}, dataset {dataset_name}, prompt_type {kwargs['prompt_type']}"
-                    ):
-                        templated_batch_chats = self.annotator.anno_tokenizer.apply_chat_template(
-                            batch_chats, add_generation_prompt=True,tokenize=False
-                        )
-                        start_time = time.time()
-                        batch_outputs = self.annotator.anno_model.generate(templated_batch_chats, self.annotator.sampling_params)  # annotate
-                        end_time = time.time()
-                        exce_time = end_time - start_time
-                        execution_time_all.append(exce_time)
-                        await self.logger.info(f'execution time for a batch: {exce_time} s')
-                        await self.logger.info(f'execution time for a instance: {exce_time / len(batch_outputs)} s')
-
-                        # for test
-                        # test_answer = []
-                        # for output in batch_outputs:
-                        #     test_answer.append({'prompt': output.prompt, 'output': output.outputs[0].text})
-                        prompt_lens = [len(e.prompt_token_ids) for e in batch_outputs]
-                        prompt_lens_all += prompt_lens
-
-                        await self.logger.info(f'prompt average length: {sum(prompt_lens) // len(prompt_lens)} tokens')
-
-                        output_lens = [len(e.outputs[0].token_ids) for e in batch_outputs]
-                        await self.logger.info(f'output average length: {sum(output_lens) // len(output_lens)} tokens')
-
-                        batch_outputs = [e.outputs[0].text for e in batch_outputs]
-                        query_count += len(batch_outputs)
-                        outputs += batch_outputs
+                outputs = await tqdm_asyncio.gather(
+                    *tasks, desc=f"annotating by {annotator_name}, dataset {dataset_name}, prompt_type {kwargs['prompt_type']}"
+                )
 
             elif not self.annotator.batch_infer and anno_cfg['dialogue_style'] == 'multi_qa':
                 for batch in tqdm(
@@ -1500,30 +1424,11 @@ class Annotation(Label):
                                 model_name=model_name,
                                 chat_message=multi_qa_chat,
                                 semaphore=semaphore,
-                                stream=self.annotator.annotator_cfg['stream'],
+                                stream=self.annotator.annotator_cfg['stream'] if 'stream' in self.annotator.annotator_cfg else False,
                                 temperature=self.annotator.annotator_cfg['anno_temperature'],
                                 top_p=self.annotator.annotator_cfg['anno_top_p'],
                                 max_tokens=self.annotator.annotator_cfg['anno_max_tokens']
                             )
-                        else:  # use local annotator and multi_qa
-                            templated_multi_qa_chat = self.annotator.anno_tokenizer.apply_chat_template(
-                                multi_qa_chat,
-                                add_generation_prompt=True,
-                                tokenize=False
-                            )
-                            tmp_outputs = self.annotator.anno_model.generate(
-                                templated_multi_qa_chat,
-                                self.annotator.sampling_params
-                            )  # len(tmp_outputs) == 1
-
-                            prompt_lens = [len(e.prompt_token_ids) for e in tmp_outputs]
-                            await self.logger.info(f'prompt average length: {sum(prompt_lens) // len(prompt_lens)} tokens')
-
-                            output_lens = [len(e.outputs[0].token_ids) for e in tmp_outputs]
-                            await self.logger.info(f'output average length: {sum(output_lens) // len(output_lens)} tokens')
-
-                            output_texts = [e.outputs[0].text for e in tmp_outputs]  # len(output_texts) == 1
-                            output_text = output_texts[0]
                         outputs.append(output_text)
 
                         # process the output for each turn in the multi_qa

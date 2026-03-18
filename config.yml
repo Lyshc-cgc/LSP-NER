@@ -52,5 +52,3 @@ label_cfgs:
   genia: cfgs/label_cfgs/genia.yml
   CMeEE_V2: cfgs/label_cfgs/CMeEE_V2.yml
 
-# annotators config
-annotators_cfg: cfgs/annotators.yml
